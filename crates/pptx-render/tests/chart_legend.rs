@@ -208,3 +208,28 @@ fn a_single_long_legend_label_wraps_without_losing_text() {
             .all(|pair| pair[0].y + pair[0].height <= pair[1].y)
     );
 }
+
+#[test]
+fn chart_text_requests_the_theme_minor_east_asian_face() {
+    let mut source = pptx_parse::parse_pptx(FIXTURE).unwrap();
+    let part = "ppt/theme/theme1.xml";
+    let xml = std::str::from_utf8(source.part_bytes(part).unwrap())
+        .unwrap()
+        .replacen(
+            r#"<a:minorFont><a:latin typeface="Arial"/><a:ea typeface=""/>"#,
+            r#"<a:minorFont><a:latin typeface="Arial"/><a:ea typeface="Chart EA Face"/>"#,
+            1,
+        );
+    assert!(xml.contains("Chart EA Face"));
+    assert!(source.replace_part(part, xml.into_bytes()));
+    let bytes = pptx_parse::write_pptx(&source).unwrap();
+    let session = DeckSession::open(&bytes, 317).unwrap();
+    let scope = session.slide_scope(0).unwrap();
+    let faces = SlideRenderer::new()
+        .requested_font_faces(session.package(), std::slice::from_ref(&scope))
+        .unwrap();
+    assert!(
+        faces.iter().any(|(family, ..)| family == "Chart EA Face"),
+        "{faces:?}"
+    );
+}

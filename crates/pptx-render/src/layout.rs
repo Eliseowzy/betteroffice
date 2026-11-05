@@ -1503,16 +1503,37 @@ impl FontRequests {
                     }
                 }
                 let request = resolve_font_request(theme, &run.style, fallback);
-                if let Some(family) =
-                    east_asian_family(theme, fallback, self.east_asian_script.as_deref())
+                let mut directs: Vec<Option<&str>> = run
+                    .east_asian
+                    .iter()
+                    .map(|(_, face)| face.as_deref())
+                    .collect();
+                if directs.is_empty()
+                    || run
+                        .east_asian
+                        .iter()
+                        .map(|(range, _)| range.len())
+                        .sum::<usize>()
+                        < run.text.len()
                 {
-                    self.record(
-                        RequestedFontFace {
-                            family,
-                            ..request.clone()
-                        },
-                        &scripts,
-                    );
+                    directs.push(None);
+                }
+                directs.dedup();
+                for direct in directs {
+                    if let Some(family) = east_asian_family(
+                        theme,
+                        direct,
+                        fallback,
+                        self.east_asian_script.as_deref(),
+                    ) {
+                        self.record(
+                            RequestedFontFace {
+                                family,
+                                ..request.clone()
+                            },
+                            &scripts,
+                        );
+                    }
                 }
                 self.record(request, &scripts);
             }
@@ -1690,6 +1711,88 @@ fn live_run_languages(
         start = end;
     }
     out
+}
+
+/// The direct `a:ea` face over each live run, as byte ranges cut at the source
+/// run boundaries; empty where the live text no longer equals its one source
+/// paragraph.
+fn live_run_east_asian(
+    sources: &[&pptx_parse::TextParagraph],
+    live: &[&str],
+) -> Vec<Vec<(std::ops::Range<usize>, Option<String>)>> {
+    let [source] = sources else {
+        return vec![Vec::new(); live.len()];
+    };
+    if !same_text(live, &source.runs)
+        || source
+            .runs
+            .iter()
+            .all(|run| run.properties.east_asian_family.is_none())
+    {
+        return vec![Vec::new(); live.len()];
+    }
+    let mut out = Vec::with_capacity(live.len());
+    let mut index = 0;
+    let mut source_start = 0;
+    let mut start = 0;
+    for text in live {
+        let end = start + text.len();
+        let mut spans: Vec<(std::ops::Range<usize>, Option<String>)> = Vec::new();
+        while let Some(run) = source.runs.get(index) {
+            let source_end = source_start + run.text.len();
+            let from = source_start.max(start);
+            let to = source_end.min(end);
+            if from < to {
+                let face = &run.properties.east_asian_family;
+                match spans.last_mut() {
+                    Some((range, last)) if last == face => range.end = to - start,
+                    _ => spans.push((from - start..to - start, face.clone())),
+                }
+            }
+            if source_end <= end {
+                source_start = source_end;
+                index += 1;
+            } else {
+                break;
+            }
+        }
+        out.push(spans);
+        start = end;
+    }
+    out
+}
+
+/// A run's text cut where its direct `a:ea` face changes, each piece with
+/// that face; the whole run with none when no face is written on it.
+fn east_asian_pieces(run: &ContentRun) -> Vec<(&str, Option<&str>)> {
+    let mut pieces = Vec::new();
+    let mut cursor = 0;
+    for (range, face) in &run.east_asian {
+        let (Some(_), Some(text)) = (range.start.checked_sub(cursor), run.text.get(range.clone()))
+        else {
+            continue;
+        };
+        if range.start > cursor {
+            pieces.push((&run.text[cursor..range.start], None));
+        }
+        pieces.push((text, face.as_deref()));
+        cursor = range.end;
+    }
+    if cursor < run.text.len() || pieces.is_empty() {
+        pieces.push((run.text.get(cursor..).unwrap_or(""), None));
+    }
+    pieces
+}
+
+fn whole_run_east_asian(
+    text: &str,
+    properties: &RunProperties,
+) -> Vec<(std::ops::Range<usize>, Option<String>)> {
+    properties
+        .east_asian_family
+        .clone()
+        .map(|face| vec![(0..text.len(), Some(face))])
+        .unwrap_or_default()
 }
 
 struct FontRequestWalker<'a, 'b> {
@@ -1897,19 +2000,30 @@ impl FontRequestWalker<'_, '_> {
                     part.part_path == *path && part.theme_part_path.as_deref() == theme_path
                 }) {
                     let default_font = resolve_theme_font_ref(Some(scope.theme), "+mn-lt");
+                    let east_asian = chart_east_asian_family(
+                        scope.theme,
+                        self.requests.east_asian_script.as_deref(),
+                    );
                     crate::chart::visit_chart_fonts(
                         &part.chart,
                         &default_font,
                         &mut |family, bold, italic, scripts| {
-                            self.requests.record(
-                                RequestedFontFace {
-                                    family: resolve_font_family(scope.theme, family),
-                                    bold,
-                                    italic,
-                                    scripts: Vec::new(),
-                                },
-                                scripts,
-                            );
+                            let request = RequestedFontFace {
+                                family: resolve_font_family(scope.theme, family),
+                                bold,
+                                italic,
+                                scripts: Vec::new(),
+                            };
+                            if let Some(family) = east_asian.clone() {
+                                self.requests.record(
+                                    RequestedFontFace {
+                                        family,
+                                        ..request.clone()
+                                    },
+                                    scripts,
+                                );
+                            }
+                            self.requests.record(request, scripts);
                         },
                     );
                 }
@@ -3906,6 +4020,9 @@ struct ContentRun {
     /// Byte ranges of `text` with the `a:rPr/@lang` of the source text they come from;
     /// ranges overlap when an edited paragraph can no longer be mapped to its source runs.
     languages: Vec<(std::ops::Range<usize>, Option<String>)>,
+    /// Byte ranges of `text` with the `a:ea/@typeface` written on the source
+    /// run itself; empty where none is known.
+    east_asian: Vec<(std::ops::Range<usize>, Option<String>)>,
 }
 
 /// For each story paragraph without a source paragraph (new or split off), the nearest
@@ -3992,6 +4109,8 @@ fn content_from_story(
                         Vec::new()
                     }
                     .into_iter();
+                    let mut live_east_asian =
+                        live_run_east_asian(source_para.as_slice(), &live).into_iter();
                     let mut runs = Vec::with_capacity(paragraph.runs.len() + insertions.len());
                     let mut insertion_index = 0;
                     let mut offset = 0;
@@ -4011,6 +4130,10 @@ fn content_from_story(
                                 style: style_from_run_properties(
                                     &source_run.properties,
                                     Some(theme),
+                                ),
+                                east_asian: whole_run_east_asian(
+                                    &slide_number.to_string(),
+                                    &source_run.properties,
                                 ),
                             });
                             insertion_index += 1;
@@ -4034,6 +4157,7 @@ fn content_from_story(
                             languages,
                             text: replaced.unwrap_or_else(|| run.text.clone()),
                             style: run.style.clone(),
+                            east_asian: live_east_asian.next().unwrap_or_default(),
                         });
                     }
                     while insertion_index < insertions.len() {
@@ -4047,6 +4171,10 @@ fn content_from_story(
                             },
                             text,
                             style: style_from_run_properties(&source_run.properties, Some(theme)),
+                            east_asian: whole_run_east_asian(
+                                &slide_number.to_string(),
+                                &source_run.properties,
+                            ),
                         });
                         insertion_index += 1;
                     }
@@ -4101,6 +4229,10 @@ fn content_from_body(
                             languages: vec![(0..text.len(), run.properties.language.clone())],
                             text,
                             style: style_from_properties(&run.properties, theme),
+                            east_asian: whole_run_east_asian(
+                                &field_text(run, slide_number),
+                                &run.properties,
+                            ),
                         }
                     })
                     .collect(),
@@ -4262,26 +4394,29 @@ fn resolve_content(
             .and_then(|value| value.language.as_deref());
         let mut runs = Vec::with_capacity(paragraph.runs.len().max(1));
         for run in &paragraph.runs {
-            let style = resolve_style(
-                renderer,
-                theme,
-                &run.style,
-                properties.default_run.as_ref(),
-                substitutions,
-            )?;
-            let start = story_offset;
-            story_offset = story_offset.saturating_add(utf16_len(&run.text));
-            let mut cased = Vec::new();
-            push_cased_runs(&mut cased, &run.text, start, language, style);
-            if properties.rtl == Some(true) {
-                let mut directed = Vec::new();
-                for run in cased {
-                    split_by_direction(run, &mut directed);
+            for (text, direct_east_asian) in east_asian_pieces(run) {
+                let style = resolve_style(
+                    renderer,
+                    theme,
+                    &run.style,
+                    direct_east_asian,
+                    properties.default_run.as_ref(),
+                    substitutions,
+                )?;
+                let start = story_offset;
+                story_offset = story_offset.saturating_add(utf16_len(text));
+                let mut cased = Vec::new();
+                push_cased_runs(&mut cased, text, start, language, style);
+                if properties.rtl == Some(true) {
+                    let mut directed = Vec::new();
+                    for run in cased {
+                        split_by_direction(run, &mut directed);
+                    }
+                    cased = directed;
                 }
-                cased = directed;
-            }
-            for run in cased {
-                renderer.split_by_coverage(run, &mut runs);
+                for run in cased {
+                    renderer.split_by_coverage(run, &mut runs);
+                }
             }
         }
         if runs.is_empty() {
@@ -4295,6 +4430,7 @@ fn resolve_content(
                     renderer,
                     theme,
                     &end_style,
+                    None,
                     properties.default_run.as_ref(),
                     substitutions,
                 )?,
@@ -4465,10 +4601,11 @@ fn theme_script_for_language(language: &str) -> Option<&'static str> {
 /// renderer's default script.
 fn east_asian_family(
     theme: &Theme,
+    direct: Option<&str>,
     fallback: Option<&RunProperties>,
     default_script: Option<&str>,
 ) -> Option<String> {
-    let reference = fallback?.east_asian_family.as_deref()?;
+    let reference = direct.or_else(|| fallback?.east_asian_family.as_deref())?;
     let script = fallback
         .and_then(|properties| properties.language.as_deref())
         .and_then(theme_script_for_language)
@@ -4609,6 +4746,7 @@ fn resolve_style(
     renderer: &SlideRenderer,
     theme: &Theme,
     direct: &TextStyle,
+    direct_east_asian: Option<&str>,
     fallback: Option<&RunProperties>,
     substitutions: &mut SubstitutionLog,
 ) -> Result<ResolvedStyle, RenderError> {
@@ -4619,10 +4757,15 @@ fn resolve_style(
         ..
     } = resolve_font_request(theme, direct, fallback);
     let mut face = renderer.resolve_face(&family, bold, italic, substitutions)?;
-    face.east_asian = east_asian_family(theme, fallback, renderer.east_asian_script.as_deref())
-        .filter(|east_asian| normalize_family(east_asian) != normalize_family(&family))
-        .and_then(|east_asian| renderer.registered_face(&east_asian, bold, italic))
-        .map(Box::new);
+    face.east_asian = east_asian_family(
+        theme,
+        direct_east_asian,
+        fallback,
+        renderer.east_asian_script.as_deref(),
+    )
+    .filter(|east_asian| normalize_family(east_asian) != normalize_family(&family))
+    .and_then(|east_asian| renderer.registered_face(&east_asian, bold, italic))
+    .map(Box::new);
     face.east_asian_language = fallback
         .and_then(|properties| properties.language.as_deref())
         .is_some_and(|language| han_script_for_language(language).is_some());
@@ -4767,6 +4910,12 @@ fn run_features(separate: bool, kerned: bool) -> &'static [ShapeFeature] {
 
 /// One shaped line of chart text, in the family, weight, slant and pixel size
 /// the plot geometry asked for.
+/// Chart text carries no `a:ea` of its own here, so its East Asian characters
+/// take the theme's minor East Asian font, as PowerPoint draws them.
+fn chart_east_asian_family(theme: &Theme, default_script: Option<&str>) -> Option<String> {
+    east_asian_family(theme, Some("+mn-ea"), None, default_script)
+}
+
 fn chart_text_primitive(
     renderer: &SlideRenderer,
     theme: &Theme,
@@ -4780,7 +4929,11 @@ fn chart_text_primitive(
         italic,
         ..
     } = chart_font_request(theme, &text.font);
-    let face = renderer.resolve_face(&family, bold, italic, substitutions)?;
+    let mut face = renderer.resolve_face(&family, bold, italic, substitutions)?;
+    face.east_asian = chart_east_asian_family(theme, renderer.east_asian_script.as_deref())
+        .filter(|east_asian| normalize_family(east_asian) != normalize_family(&family))
+        .and_then(|east_asian| renderer.registered_face(&east_asian, bold, italic))
+        .map(Box::new);
     let size_px = safe_geometry(text.font.size_px as f32).clamp(1.0, 4_096.0);
     let tracking = safe_geometry(text.font.letter_spacing_px as f32);
     let browser_metrics = face.line.filter(|_| face.id.to_u32() == BROWSER_FONT_ID);
@@ -7867,6 +8020,27 @@ mod tests {
             ))
         );
         assert_eq!(path[5], ooxml_drawingml::GeometryPathCommand::Close);
+    }
+
+    #[test]
+    fn an_east_asian_face_written_on_a_run_is_requested() {
+        let mut source = pptx_parse::parse_pptx(FIXTURE).unwrap();
+        let part = "ppt/slides/slide1.xml";
+        let shape = r#"<p:sp><p:nvSpPr><p:cNvPr id="4343" name="Direct ea"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1828800" cy="457200"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US"><a:ea typeface="Direct EA Face"/></a:rPr><a:t>直接</a:t></a:r><a:r><a:rPr lang="en-US"/><a:t>继承</a:t></a:r></a:p></p:txBody></p:sp>"#;
+        let xml = std::str::from_utf8(source.part_bytes(part).unwrap())
+            .unwrap()
+            .replace("</p:spTree>", &format!("{shape}</p:spTree>"));
+        assert!(source.replace_part(part, xml.into_bytes()));
+        let bytes = pptx_parse::write_pptx(&source).unwrap();
+        let session = DeckSession::open(&bytes, 291).unwrap();
+        let scope = session.slide_scope(0).unwrap();
+        let faces = renderer()
+            .requested_font_faces(session.package(), std::slice::from_ref(&scope))
+            .unwrap();
+        assert!(
+            faces.iter().any(|(family, ..)| family == "Direct EA Face"),
+            "{faces:?}"
+        );
     }
 
     #[test]
@@ -13831,6 +14005,7 @@ mod tests {
                 &renderer,
                 &theme,
                 style,
+                None,
                 Some(&fallback),
                 &mut SubstitutionLog::default(),
             )
