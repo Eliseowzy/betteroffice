@@ -63,16 +63,13 @@
       "first": {
         "type": "move",
         "x": 110.0,
-        "y": 98.68
+        "y": 93.93
       },
       "last": {
         "type": "close"
       },
       "op": "path",
-      "stroke": {
-        "color": "#FFFFFF",
-        "width": 1.0
-      }
+      "stroke": null
     }
   ]
 }
