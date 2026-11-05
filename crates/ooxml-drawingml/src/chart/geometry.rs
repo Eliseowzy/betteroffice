@@ -1181,8 +1181,10 @@ pub fn plot_chart_into<S: PlotSink + ?Sized>(chart: &PlotChart<'_>, rect: PlotRe
         },
         None => {
             let plot_y = region_y + axis_header + bands.top;
+            // A bottom legend already keeps the frame margin below itself, so
+            // the category band hung over it drops its own.
             let bottom = if legend_position == "bottom" && legend_h > 0.0 {
-                legend_h + BAND_GAP
+                legend_h + BAND_GAP - CHART_PAD.min(bands.bottom)
             } else {
                 0.0
             };
@@ -3389,6 +3391,7 @@ fn emit_axes<S: PlotSink + ?Sized>(
             width,
         );
     }
+    emit_category_ticks(ops, family, plot, transposed);
     let category_style = family.category_text();
     let below_labels = if transposed {
         (!axis_labels_hidden(axis) && !axis_labels_far(axis, family.category_axis, false))
@@ -3447,6 +3450,43 @@ fn emit_axes<S: PlotSink + ?Sized>(
             category_title.2,
             tick_style,
         );
+    }
+}
+
+/// `c:majorTickMark` on a category axis: one mark per category boundary,
+/// in the axis' own line colour.
+fn emit_category_ticks<S: PlotSink + ?Sized>(
+    ops: &mut Emitter<'_, S>,
+    family: PlotFamily<'_>,
+    plot: PlotArea,
+    transposed: bool,
+) {
+    if !matches!(family.chart_type, "bar" | "column" | "line" | "area") {
+        return;
+    }
+    let Some(axis) = family.category_axis.filter(|axis| !axis.hidden) else {
+        return;
+    };
+    let Some((outer, inner)) = tick_extents(axis.major_tick_mark) else {
+        return;
+    };
+    let Some((color, _)) = axis_stroke(Some(axis)) else {
+        return;
+    };
+    let count = category_count(family.series).min(MAX_PLOT_AXIS_TICKS);
+    if count == 0 {
+        return;
+    }
+    for index in 0..=count {
+        let fraction = index as f64 / count as f64;
+        if transposed {
+            let at = plot.y + fraction * plot.h;
+            push_line(ops, plot.x - outer, at, plot.x + inner, at, color, 1.0);
+        } else {
+            let at = plot.x + fraction * plot.w;
+            let edge = plot.y + plot.h;
+            push_line(ops, at, edge + outer, at, edge - inner, color, 1.0);
+        }
     }
 }
 
@@ -10295,6 +10335,36 @@ mod tests {
         assert_eq!(ticks(Some("none")), 0);
         assert_eq!(ticks(Some("out")), 9);
         assert_eq!(ticks(Some("cross")), 9);
+    }
+
+    #[test]
+    fn a_category_axis_marks_every_category_boundary() {
+        let data = source(&[1.0, 2.0, 3.0]);
+        let ticks = |mark: Option<&'static str>| {
+            let mut group = group("column", vec![series("North", &data)]);
+            group.axis_ids = vec!["1", "2"];
+            let category = PlotAxis {
+                id: Some("1"),
+                kind: PlotAxisKind::Category,
+                major_tick_mark: mark,
+                ..PlotAxis::default()
+            };
+            let chart = PlotChart {
+                chart_type: "column",
+                plot_groups: vec![group],
+                axes: vec![category, value_axis("2", 0.0, 4.0)],
+                ..PlotChart::default()
+            };
+            plot_chart(&chart, rect())
+                .iter()
+                .filter(|op| {
+                    matches!(op, PlotOp::Line { x1, x2, y1, y2, .. }
+                    if x1 == x2 && (y1 - y2).abs() > 0.0 && (y1 - y2).abs() < 8.0)
+                })
+                .count()
+        };
+        assert_eq!(ticks(None), 0);
+        assert_eq!(ticks(Some("out")), 4);
     }
 
     #[test]

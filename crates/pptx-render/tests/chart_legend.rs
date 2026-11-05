@@ -78,7 +78,7 @@ fn text<'a>(parts: &'a [Primitive], value: &str) -> &'a PositionedTextLine {
 
 #[test]
 fn top_and_bottom_legends_reserve_their_own_rows() {
-    for (slide, y, plot_y) in [(0, 412.85, 137.96), (1, 137.71, 163.96)] {
+    for (slide, y, plot_y, plot_h) in [(0, 412.85, 137.96, 231.04), (1, 137.71, 163.96, 221.54)] {
         let parts = chart(slide);
         let swatches = swatches(&parts);
         assert_eq!(swatches.len(), 2);
@@ -90,7 +90,7 @@ fn top_and_bottom_legends_reserve_their_own_rows() {
         let (x, top, h) = axis(&parts);
         assert!((x - 143.62305).abs() < 0.001, "{x}");
         assert!((top - plot_y).abs() < 0.001, "{top}");
-        assert!((h - 221.54).abs() < 0.001, "{h}");
+        assert!((h - plot_h).abs() < 0.001, "{h}");
         let title = text(&parts, "Revenue");
         assert!((title.x + title.width / 2.0 - 384.0).abs() < 0.001);
     }
