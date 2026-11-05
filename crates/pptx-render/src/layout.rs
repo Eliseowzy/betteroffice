@@ -110,6 +110,9 @@ struct FontFace {
     /// The run's `a:ea` face, which draws its East Asian characters even where
     /// this face has glyphs for them, as PowerPoint does.
     east_asian: Option<Box<FontFace>>,
+    /// The run names an East Asian `lang`, so its full-width punctuation
+    /// belongs to the East Asian face too.
+    east_asian_language: bool,
 }
 
 fn needs_visible_glyph(character: char) -> bool {
@@ -287,6 +290,7 @@ impl SlideRenderer {
         })
         .map(|face| FontFace {
             east_asian: None,
+            east_asian_language: false,
             ..face.clone()
         })
     }
@@ -334,6 +338,7 @@ impl SlideRenderer {
             line: metrics.filter(|metrics| !sits_on_own_baseline(&self.fonts, id, metrics)),
             line_id: id,
             east_asian: None,
+            east_asian_language: false,
         };
         self.faces.insert((requested, bold, italic), face.clone());
         self.fallback.get_or_insert(face);
@@ -398,6 +403,7 @@ impl SlideRenderer {
                 line: None,
                 line_id: id,
                 east_asian: None,
+                east_asian_language: false,
             },
         ));
         self.font_count += 1;
@@ -469,7 +475,7 @@ impl SlideRenderer {
             .filter(|east_asian| east_asian.id != face.id);
         let east_asian_drawn = |character: char| {
             east_asian.filter(|east_asian| {
-                is_east_asian(character)
+                drawn_in_east_asian(character, face.east_asian_language)
                     && self.fonts.covers(east_asian.id, character).unwrap_or(false)
             })
         };
@@ -505,6 +511,7 @@ impl SlideRenderer {
                     line: face.line,
                     line_id: face.line_id,
                     east_asian: None,
+                    east_asian_language: false,
                     ..east_asian.clone()
                 }),
                 _ if own => None,
@@ -1013,6 +1020,7 @@ impl SlideRenderer {
                 line: Some(metrics),
                 line_id: FontId::from_u32(BROWSER_FONT_ID),
                 east_asian: None,
+                east_asian_language: false,
             });
         }
         let styles = [
@@ -4491,6 +4499,18 @@ fn is_east_asian(character: char) -> bool {
         | 0x2_0000..=0x3_FFFF)
 }
 
+/// Full-width forms of ASCII punctuation. PowerPoint draws them in the Latin
+/// face unless the run's `lang` is East Asian: its export of a deck with no
+/// `lang` shows `，` and `（` in the Latin face's fallback, centred in the em.
+fn is_full_width_symbol(character: char) -> bool {
+    matches!(character as u32,
+        0xFF01..=0xFF0F | 0xFF1A..=0xFF20 | 0xFF3B..=0xFF40 | 0xFF5B..=0xFF60)
+}
+
+fn drawn_in_east_asian(character: char, east_asian_language: bool) -> bool {
+    is_east_asian(character) && (east_asian_language || !is_full_width_symbol(character))
+}
+
 fn resolve_font_request(
     theme: &Theme,
     direct: &TextStyle,
@@ -4603,6 +4623,9 @@ fn resolve_style(
         .filter(|east_asian| normalize_family(east_asian) != normalize_family(&family))
         .and_then(|east_asian| renderer.registered_face(&east_asian, bold, italic))
         .map(Box::new);
+    face.east_asian_language = fallback
+        .and_then(|properties| properties.language.as_deref())
+        .is_some_and(|language| han_script_for_language(language).is_some());
     let color = direct
         .color
         .as_deref()
@@ -5129,6 +5152,7 @@ fn key_style(key: &mut Vec<u8>, style: &ResolvedStyle) {
                 line,
                 line_id,
                 east_asian,
+                east_asian_language,
             },
         family,
         font_size_pt,
@@ -5155,6 +5179,7 @@ fn key_style(key: &mut Vec<u8>, style: &ResolvedStyle) {
     key_str(key, requested_family);
     key.push(u8::from(widths.is_some()));
     key.push(u8::from(line.is_some()));
+    key.push(u8::from(*east_asian_language));
     key_str(key, family);
     key_f32(key, *font_size_pt);
     key_f32(key, *line_font_size_pt);

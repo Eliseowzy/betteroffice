@@ -53,6 +53,7 @@ impl SlideRenderer {
                     line: None,
                     line_id: id,
                     east_asian: None,
+                    east_asian_language: false,
                 },
             ),
         );

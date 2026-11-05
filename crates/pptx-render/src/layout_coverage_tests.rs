@@ -578,4 +578,16 @@ mod coverage_regressions {
         assert_eq!(halfwidth[0].0, BROWSER_FONT_ID);
         assert!((halfwidth[0].1 - 30.0).abs() <= 0.6, "{}", halfwidth[0].1);
     }
+
+    #[test]
+    fn full_width_punctuation_joins_the_east_asian_face_only_for_an_east_asian_lang() {
+        for character in ['，', '（', '）', '：', '！'] {
+            assert!(!drawn_in_east_asian(character, false), "{character}");
+            assert!(drawn_in_east_asian(character, true), "{character}");
+        }
+        for character in ['亿', '。', '、', 'Ａ', '１'] {
+            assert!(drawn_in_east_asian(character, false), "{character}");
+        }
+        assert!(!drawn_in_east_asian(',', true));
+    }
 }
