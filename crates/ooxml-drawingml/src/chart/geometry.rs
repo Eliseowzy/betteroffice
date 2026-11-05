@@ -95,6 +95,7 @@ const BAND_GAP: f64 = 12.0;
 /// A title's line height and the depth of its baseline below the line's top,
 /// in ems.
 const TITLE_LINE_EM: f64 = 1.22;
+const TITLE_SCALE: f64 = 1.2;
 const TITLE_ASCENT_EM: f64 = 0.95;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -992,10 +993,15 @@ pub fn plot_chart_into<S: PlotSink + ?Sized>(chart: &PlotChart<'_>, rect: PlotRe
     }
 
     let title_h = if let Some(title) = chart.title.filter(|s| !s.is_empty()) {
+        // An unsized title runs a fifth larger than the chart's own text.
+        let inherited = PlotTextStyle {
+            size_pt: chart_text.size_pt.map(|size| size * TITLE_SCALE),
+            ..chart_text
+        };
         let mut style = chart
             .text
             .title
-            .over(chart_text)
+            .over(inherited)
             .resolve(CHART_TITLE_SIZE_PX, 600);
         // A title never takes more than half the chart: past that its type
         // shrinks to the band.
@@ -1191,11 +1197,28 @@ pub fn plot_chart_into<S: PlotSink + ?Sized>(chart: &PlotChart<'_>, rect: PlotRe
         }
     };
 
+    // A pie fills its region inside the plot inset, except on a side that
+    // borders a reserved legend, which keeps only the legend's own gap.
+    let inset = CHART_PAD + PLOT_INSET;
+    let pie_left = if reserve_left > 0.0 { 0.0 } else { inset };
+    let pie_right = if reserve_right > 0.0 { 0.0 } else { inset };
+    let pie_bottom = if legend_h > 0.0 { PLOT_INSET } else { inset };
+    let pie_box = (
+        region_x + pie_left.min(region_w / 2.0),
+        region_y + PLOT_INSET.min(region_h / 2.0),
+        (region_w - pie_left - pie_right).max(region_w.min(MIN_PLOT)),
+        (region_h - PLOT_INSET - pie_bottom).max(region_h.min(MIN_PLOT)),
+    );
     for family in families {
         if ops.exhausted() {
             break;
         }
-        emit_family(ops, family, plot, region_x, region_y, region_w, region_h);
+        let (bx, by, bw, bh) = if is_pie(family.chart_type) {
+            pie_box
+        } else {
+            (region_x, region_y, region_w, region_h)
+        };
+        emit_family(ops, family, plot, bx, by, bw, bh);
     }
 
     if let Some(band) = legend {
@@ -1270,6 +1293,10 @@ fn plot_families<'a>(
             }
         })
         .collect()
+}
+
+fn is_pie(chart_type: &str) -> bool {
+    matches!(chart_type, "pie" | "doughnut" | "ofPie")
 }
 
 fn has_axes(chart_type: &str) -> bool {
@@ -5130,7 +5157,8 @@ fn emit_pie<S: PlotSink + ?Sized>(
             None | Some("bestFit") | Some("outEnd")
         ) && point_label(family, series, *index, total).is_some_and(|text| !text.trim().is_empty())
     });
-    let mut r = (width.min(height) * 0.45).max(10.0_f64.min(width.min(height) / 2.0).max(0.0));
+    let side = width.min(height);
+    let mut r = side / 2.0;
     if automatic_labels {
         r *= PIE_LABEL_RADIUS_SCALE;
     }
@@ -5154,6 +5182,19 @@ fn emit_pie<S: PlotSink + ?Sized>(
             .unwrap_or(0.0)
             .rem_euclid(360.0)
             .to_radians();
+    // Office outlines slices only where the series' `a:ln` asks; a series
+    // with no `c:spPr` draws them edge to edge.
+    let slice_outline = series
+        .series
+        .line
+        .filter(|line| !line.none)
+        .map(|line| PlotStroke {
+            color: line
+                .color
+                .map(hex)
+                .unwrap_or_else(|| CHART_BACKGROUND_COLOR.to_owned()),
+            width: line_width(line.width_emu, 1.0),
+        });
     let mut angle = start;
     for (index, value) in wedges {
         let sweep = (value / total) * std::f64::consts::TAU;
@@ -5173,10 +5214,7 @@ fn emit_pie<S: PlotSink + ?Sized>(
             h: r * 2.0,
             commands: pie_wedge_path(ox, oy, r, inner_r, angle, angle + sweep),
             fill: color,
-            stroke: Some(PlotStroke {
-                color: CHART_BACKGROUND_COLOR.to_owned(),
-                width: 1.0,
-            }),
+            stroke: slice_outline.clone(),
         });
         if let Some(text) = point_label(family, series, index, total) {
             let spec = point_label_spec(series, index);
@@ -6190,6 +6228,37 @@ mod tests {
         assert_eq!(
             chart_aria_label(&chart),
             "Revenue, column chart, 1 series, 2 categories"
+        );
+    }
+
+    #[test]
+    fn pie_slices_are_outlined_only_where_the_series_line_asks() {
+        let share = source(&[3.0, 1.0]);
+        let strokes = |line: Option<PlotLine<'static>>| {
+            let mut series = series("Share", &share);
+            series.line = line;
+            let chart = PlotChart {
+                chart_type: "doughnut",
+                series: vec![series],
+                ..PlotChart::default()
+            };
+            plot_chart(&chart, rect())
+                .into_iter()
+                .filter_map(|op| match op {
+                    PlotOp::Path { stroke, .. } => Some(stroke.map(|stroke| stroke.color)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(strokes(None), [None, None]);
+        let white = PlotLine {
+            none: false,
+            color: Some("FFFFFF"),
+            width_emu: None,
+        };
+        assert_eq!(
+            strokes(Some(white)),
+            [Some("#FFFFFF".to_owned()), Some("#FFFFFF".to_owned())]
         );
     }
 
