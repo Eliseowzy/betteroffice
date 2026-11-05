@@ -41,9 +41,35 @@ pub fn break_allowed_between(before: char, after: char) -> bool {
 /// slide takes this set instead: the UAX-14 opportunities plus one after every
 /// hyphen that a digit follows.
 pub fn presentation_break_opportunities(text: &str) -> Vec<BreakOpportunity> {
+    presentation_break_opportunities_with(text, true)
+}
+
+/// [`presentation_break_opportunities`], where `east_asian` says whether the
+/// text carries an East Asian `lang`. Without one PowerPoint wraps it by its
+/// Latin rules: a line may also end after an ideograph that full-width
+/// punctuation follows (`服务于人|，守护`), or after a curly opening quote an
+/// ideograph follows (`测试“|文字`), as its export shows.
+pub fn presentation_break_opportunities_with(
+    text: &str,
+    east_asian: bool,
+) -> Vec<BreakOpportunity> {
     let mut opportunities = break_opportunities(text);
     let mut extra: Vec<usize> = Vec::new();
     for (byte_index, character) in text.char_indices() {
+        if !east_asian {
+            let after = byte_index + character.len_utf8();
+            let previous = text[..byte_index].chars().next_back();
+            let next = text[after..].chars().next();
+            if matches!(character, '\u{201C}' | '\u{2018}')
+                && previous.is_some_and(is_ideograph)
+                && next.is_some_and(is_ideograph)
+            {
+                extra.push(after);
+            }
+            if is_full_width_symbol(character) && previous.is_some_and(is_ideograph) {
+                extra.push(byte_index);
+            }
+        }
         if !matches!(character, '-' | '\u{2010}') {
             continue;
         }
@@ -70,6 +96,15 @@ pub fn presentation_break_opportunities(text: &str) -> Vec<BreakOpportunity> {
     }));
     opportunities.sort_by_key(|value| value.byte_index);
     opportunities
+}
+
+fn is_full_width_symbol(character: char) -> bool {
+    matches!(character as u32,
+        0xFF01..=0xFF0F | 0xFF1A..=0xFF20 | 0xFF3B..=0xFF40 | 0xFF5B..=0xFF60)
+}
+
+fn is_ideograph(character: char) -> bool {
+    matches!(character as u32, 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF | 0x2_0000..=0x3_FFFF)
 }
 
 /// Word's default East Asian prohibited-start/prohibited-end refinement.
@@ -112,6 +147,23 @@ mod word_tests {
         assert_eq!(indexes("2020-2021 x"), [5, 10, 11]);
         assert_eq!(indexes("well-known thing"), [5, 11, 16]);
         assert_eq!(indexes("-19 x"), [4, 5]);
+    }
+
+    #[test]
+    fn text_without_an_east_asian_lang_wraps_around_ideographs_by_latin_rules() {
+        let indexes = |text: &str, east_asian: bool| {
+            presentation_break_opportunities_with(text, east_asian)
+                .into_iter()
+                .map(|value| value.byte_index)
+                .collect::<Vec<_>>()
+        };
+        let quoted = "测试\u{201C}文字";
+        assert!(indexes(quoted, false).contains(&"测试\u{201C}".len()));
+        assert!(!indexes(quoted, true).contains(&"测试\u{201C}".len()));
+        assert!(!indexes("a \u{201C}word", false).contains(&"a \u{201C}".len()));
+        let comma = "于人，守护";
+        assert!(indexes(comma, false).contains(&"于人".len()));
+        assert!(!indexes(comma, true).contains(&"于人".len()));
     }
 
     #[test]

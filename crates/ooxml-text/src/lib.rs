@@ -83,6 +83,7 @@ pub use font_store::{
 };
 pub use line_break::{
     BreakOpportunity, break_allowed_between, break_opportunities, presentation_break_opportunities,
+    presentation_break_opportunities_with,
 };
 pub use measure::{
     FontChains, FontSlotUse, MeasureError, MeasureInput, MeasureRequest, ParagraphExtentOut,

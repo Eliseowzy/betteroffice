@@ -17,8 +17,8 @@ use ooxml_text::family_metrics::{
 };
 use ooxml_text::{
     CompatFlags, FontId, FontStore, ShapeFeature, ShapedGlyph, WORD_SMALL_CAPS_ADVANCE_SCALE,
-    han_script_for_language, paragraph_scripts_with_languages, presentation_break_opportunities,
-    shape, single_line_box, uppercase_for_language,
+    han_script_for_language, paragraph_scripts_with_languages,
+    presentation_break_opportunities_with, shape, single_line_box, uppercase_for_language,
 };
 use pptx_edit::paragraph::{
     ListCounters, ParagraphCascade, SlideParents, find_placeholder, slide_number_insertions,
@@ -5908,7 +5908,11 @@ fn shape_paragraph(
         .iter()
         .map(|run| run.text.as_str())
         .collect::<String>();
-    let breaks = presentation_break_opportunities(&full_text)
+    let east_asian = paragraph
+        .runs
+        .iter()
+        .any(|run| run.style.face.east_asian_language);
+    let breaks = presentation_break_opportunities_with(&full_text, east_asian)
         .into_iter()
         .map(|value| (value.byte_index, value.mandatory))
         .collect::<HashMap<_, _>>();
