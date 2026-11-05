@@ -152,7 +152,7 @@ pub fn parse_chart_space<E: ChartXml>(chart_space: &E) -> Option<ChartSpace> {
     let title = first_deep(chart_space, "title", 0);
     Some(ChartSpace {
         chart_type,
-        title: text_from_rich_text(title),
+        title: text_from_rich_text(title).or_else(|| auto_title(chart_space, &plot_groups)),
         legend: parse_legend(chart_space),
         series,
         axes,
@@ -163,6 +163,23 @@ pub fn parse_chart_space<E: ChartXml>(chart_space: &E) -> Option<ChartSpace> {
         fill: parse_fill(child(chart_space, "spPr")),
         plot_layout,
     })
+}
+
+/// The series name Office titles a one-series chart with when its
+/// `c:autoTitleDeleted` is off and no title text is given.
+fn auto_title<E: ChartXml>(chart_space: &E, groups: &[ChartPlotGroup]) -> Option<String> {
+    let chart = child(chart_space, "chart")?;
+    if matches!(
+        val_attr(child(chart, "autoTitleDeleted")),
+        Some("1" | "true")
+    ) {
+        return None;
+    }
+    let mut series = groups.iter().flat_map(|group| group.series.iter());
+    match (series.next(), series.next()) {
+        (Some(only), None) => only.name.clone().filter(|name| !name.trim().is_empty()),
+        _ => None,
+    }
 }
 
 /// `c:plotArea/c:layout/c:manualLayout`, read only when it places the inner
@@ -1144,6 +1161,19 @@ mod tests {
         let axes = parsed.axes.unwrap();
         assert_eq!(axes.category.unwrap().labels.unwrap(), ["Q1"]);
         assert_eq!(axes.value.unwrap().max, Some(9.0));
+    }
+
+    #[test]
+    fn a_one_series_chart_without_a_title_is_titled_with_the_series_name() {
+        let mut space = fixture("c:");
+        space.children[0].children.remove(0);
+        let parsed = parse_chart_space(&space).expect("chart space parses");
+        assert_eq!(parsed.title.as_deref(), Some("North"));
+        space.children[0]
+            .children
+            .insert(0, Node::val("c:autoTitleDeleted", "1"));
+        let parsed = parse_chart_space(&space).expect("chart space parses");
+        assert_eq!(parsed.title, None);
     }
 
     #[test]

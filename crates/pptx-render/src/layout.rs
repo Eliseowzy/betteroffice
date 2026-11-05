@@ -13300,7 +13300,7 @@ mod tests {
                 _ => None,
             })
             .expect("the grouped chart plots");
-        assert_eq!(label, "Untitled chart, pie chart, 1 series, 2 categories");
+        assert_eq!(label, "Share, pie chart, 1 series, 2 categories");
         assert_eq!(
             parts
                 .iter()
