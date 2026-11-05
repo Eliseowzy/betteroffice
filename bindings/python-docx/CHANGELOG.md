@@ -1,5 +1,20 @@
 # @betteroffice/python-docx
 
+## 0.3.0
+
+### Minor Changes
+
+- b0ffbe6: DOCX `render_png` no longer refuses a page over an effect it cannot draw: it draws text shadows, small caps and shape shadows and glows as the browser does, leaves other effects out, and reports them by kind in `skipped_effects`.
+- e1fed99: Adds `Document.replace_paragraph_text(para_id, text)` as an alias of `replace_text`, returning the same `Edit` receipt. Opt-in; `replace_text` is unchanged.
+- 750cbbb: Changes `render_png` to accept `{"page": 0}` with keyword-only `scale=1.0`. Migrate display-list callers to `render_display_list_png(display_list, page)`; page indexes remain zero-based.
+
+### Patch Changes
+
+- 22b5073: DOCX `render_png` renders documents with footnotes or endnotes again. The layout request now writes integral numbers as integers, so note ids, the note numbering start and footnote columns reach layout in the form it reads.
+- cc65f8e: READMEs state API compatibility as a versioning policy: releases are versioned with Changesets, the API can change between minor versions with every change in the changelog, and deprecations are announced before removal. The Python packages drop the development status classifier.
+- 2758dfd: The Python packages now install the bundled fonts as `betteroffice-fonts-latin`, `betteroffice-fonts-intl` and `betteroffice-fonts-cjk` and render with them from disk; nothing is downloaded. `register_font` still adds or replaces a family.
+- ad45f86: Adds opt-in `decode_font_face` calls for zstd and woff2t font pack faces. Rust facades expose the shared `betteroffice-fonts` decoder as `fonts`; Python returns font bytes and an optional transformed payload.
+
 ## 0.2.2
 
 ### Patch Changes

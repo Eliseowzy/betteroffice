@@ -1,5 +1,35 @@
 # @betteroffice/python-xlsx
 
+## 0.3.0
+
+### Minor Changes
+
+- 750cbbb: `render_png` takes a target: `{"sheet": name_or_index, "range": ...}` or `{"sheet": name_or_index, "viewport": {...}}`, with `scale`, `max_width` and `max_height` as keywords. `range` is an A1 string or an address dictionary. For the old `render_png(sheet)`, which frames the used range, call `render_sheet(sheet)`.
+- fafce81: Adds opt-in `range="used"` to XLSX `render_png` target dictionaries to frame the sheet's used range at call time, matching `render_sheet`. The keyword is case sensitive; targets still require a range or viewport.
+- 257ab37: Adds `apply_ops` for the raw structural ops TypeScript's `applyOps` takes, typed in `betteroffice_xlsx.ops`, and `move_range`, `set_hyperlink`, `remove_hyperlink`, `edit_charts`, `move_chart`, `capture_format` and `apply_format`. Refusals raise `OperationError` or `CollaborativeStructureError` with TypeScript's message.
+- b27572c: Adds Python workbook reads for cells, ranges, sheet metadata, calculation status, defined names, conditional formats, text search, selection formatting, merged ranges and charts. Results use plain dictionaries and lists with camelCase keys, matching TypeScript workbook reads.
+- 702b174: The calculation engine now evaluates RATE, IRR, MIRR, XNPV, XIRR, IPMT, PPMT, CUMIPMT, CUMPRINC, ISPMT, DB, DDB, VDB, SLN, SYD, EFFECT, NOMINAL, PDURATION, RRI, FVSCHEDULE, DOLLARDE, DOLLARFR and CELL. RATE follows Excel's own iteration, so results match Excel's saved values.
+- dac1245: The calculation engine now evaluates GAMMA, GAMMALN and the gamma, beta, normal, lognormal, chi-square, t and F distribution functions with their inverses and compatibility names, ERF and ERFC, PHI, GAUSS, CHISQ.TEST, T.TEST, F.TEST and the CONFIDENCE functions.
+- 317d85c: The calculation engine now evaluates Excel's database functions DAVERAGE, DCOUNT, DCOUNTA, DGET, DMAX, DMIN, DPRODUCT, DSTDEV, DSTDEVP, DSUM, DVAR and DVARP, including OR rows, repeated columns, wildcards and computed criteria.
+- f92d560: The calculation engine now evaluates the binomial, negative binomial, hypergeometric, Poisson, exponential and Weibull distribution functions, FISHER, STANDARDIZE, PERMUT, PEARSON, STEYX, SKEW.P, the A-variance functions, the exclusive percentile and rank functions, MODE.MULT, PROB, Z.TEST, GROWTH and LOGEST.
+- c06b68d: The calculation engine now evaluates Excel's engineering functions: base conversions (BIN2DEC through OCT2HEX), the BIT functions, DELTA, GESTEP, COMPLEX, every IM complex-number function and the four Bessel functions. Complex results are written as Excel writes them.
+- 74407d2: The calculation engine now evaluates more information and text functions: ERROR.TYPE, INFO, ISFORMULA, ISNONTEXT, ISOMITTED, ISREF, SHEET, SHEETS, TYPE, UNICHAR, UNICODE, DOLLAR, VALUETOTEXT, ARRAYTOTEXT, ASC, JIS, DBCS, BAHTTEXT, PHONETIC, ENCODEURL and the byte-count text functions such as LENB.
+- e5bb91a: The calculation engine now evaluates 33 more math and trig functions, including the hyperbolic and reciprocal trig functions, ROMAN, ARABIC, BASE, DECIMAL, CEILING.MATH, FLOOR.MATH, MDETERM, MINVERSE, MUNIT, RANDARRAY, the SUMX2 family, PERCENTOF and DAYS360.
+- 2dbf721: The calculation engine now evaluates Excel's securities functions: the COUP functions, ACCRINT, ACCRINTM, PRICE, YIELD and their discount and at-maturity variants, DISC, INTRATE, RECEIVED, DURATION, MDURATION, the TBILL functions, the odd-period functions and AMORDEGRC and AMORLINC.
+- c1525f7: Formulas using functions that cannot be computed offline (CUBE functions, WEBSERVICE, RTD, STOCKHISTORY, IMAGE, add-in calls and similar), and formulas reading them, keep the value Excel saved, even inside IFERROR, and the calculation report lists them as `unevaluatedCells` in JS and `unevaluated` in Python.
+
+### Patch Changes
+
+- cc65f8e: READMEs state API compatibility as a versioning policy: releases are versioned with Changesets, the API can change between minor versions with every change in the changelog, and deprecations are announced before removal. The Python packages drop the development status classifier.
+- 2758dfd: The Python packages now install the bundled fonts as `betteroffice-fonts-latin`, `betteroffice-fonts-intl` and `betteroffice-fonts-cjk` and render with them from disk; nothing is downloaded. `register_font` still adds or replaces a family.
+- ad45f86: Adds opt-in `decode_font_face` calls for zstd and woff2t font pack faces. Rust facades expose the shared `betteroffice-fonts` decoder as `fonts`; Python returns font bytes and an optional transformed payload.
+- f77d138: Date functions in workbooks that use the 1904 date system now return 1904 serials: `DATE(2026,11,1)` is 44865, as in Excel. `nowSerial` is always a 1900-system serial, so TODAY(), NOW() and typed dates without a year match the calendar in 1904 workbooks too.
+- f25a90c: Calculation matches Excel at numeric limits: numbers become text with 15 significant digits (`""&(0.1+0.2)` is "0.3"), formula literals keep 15 digits within Excel's range, subnormal results are 0, and MOD, MULTINOMIAL, BESSELK, the TBILL, T and F functions follow Excel's limits.
+- 14b82ff: Shown and returned formula text drops Excel's storage prefixes (`_xlfn.`, `_xlws.`, `_xlpm.`, `_xleta.`): the formula bar, `readCells`, structured export, defined names, conditional formats, agent reads and Python `formula()` give `=SEQUENCE(2,2)`. Saved files keep the prefixes; re-committing a shown formula leaves the cell unchanged.
+- 9d433be: Formulas written in BetterOffice that use newer Excel functions (XLOOKUP, IFS, LET, LAMBDA, FILTER and others) are saved with the `_xlfn.` prefixes Excel expects, so Excel no longer opens them as #NAME?. Unedited formulas keep their exact text.
+- 750cbbb: PNG size caps (`max_width`, `max_height`) are no longer exceeded by 1 px at fractional scales, including in `render_sheet`.
+- 2c28650: After a recalculation, saved files carry the recalculated values: the new `WorkbookHandle.recalculate()`, or opening a file that asks for a full calculation on load. Formulas the engine cannot evaluate keep the result the file stored. Without either, saved values stay byte for byte.
+
 ## 0.2.2
 
 ### Patch Changes

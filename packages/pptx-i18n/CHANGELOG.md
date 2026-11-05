@@ -1,5 +1,22 @@
 # @betteroffice/pptx-i18n
 
+## 0.6.0
+
+### Minor Changes
+
+- 7b30d80: Adds `ar`, `es`, `it`, `ja`, `ko`, `nl`, `ru`, `uk`, `vi` and `zh-TW` (`zhTW`), and every shipped locale now translates every string with Office terminology and its language's plural forms.
+- c10ba8c: Adds opt-in `addTextBox`, `addShape`, `addPicture`, and `removeShape` proposals with local shape and story refs, insertion outlines, deletion strikes, and an 8 MB decoded media total limit. Exports `decodeBrowserPresentationImage` for browser image decoding without WASM.
+- 3313017: Adds opt-in `setSlideLayout` and `setSlideBackground` proposals with `@ref` slide targets. Review previews show layout artwork and inherited picture backgrounds, with translated labels for both changes.
+- c664499: Adds opt-in slide structure proposals with local refs, `proposalSlideStrip`, and `layoutProposalDiffSlideById`. The editor previews inserted, deleted, and moved slides before acceptance, and `office_propose` accepts slide structure edits for PPTX.
+- 34b5676: Adds opt-in `insertTableRow`, `deleteTableRow`, `insertTableColumn`, and `deleteTableColumn` proposals, including Python proposal dictionaries. Review previews show table structure changes with translated labels, and acceptance applies the proposal as one undo step.
+- 3e30099: Adds opt-in `reorderShape` proposals for moving shapes to the front, back, forward or backward, including Python dictionaries and agent tools. Review previews show the new stacking order with translated labels, and acceptance applies the proposal as one undo step.
+
+### Patch Changes
+
+- 4fb3025: The `de`, `fr`, `he`, `hi`, `id`, `pl`, `pt-BR`, `tr` and `zh-CN` editor strings are now fully translated with Office terminology and correct plurals. Removes 185 unused locale keys.
+- bd6c8b5: Adds `strike` formatting and the `strikethrough` editor command and toolbar button. Single and double strikethrough render by default, preserving inherited formatting and explicit overrides; deck schema moves to 2.4, so older peers refuse documents migrated by this version.
+- e6d5c52: Package exports now carry a `default` condition next to `import`, so webpack consumers (`next build --webpack`, including editors loaded with `next/dynamic`) resolve every entry instead of failing with "Package path is not exported".
+
 ## 0.5.1
 
 ## 0.5.0
