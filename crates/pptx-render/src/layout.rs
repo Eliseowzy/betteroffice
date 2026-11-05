@@ -6203,7 +6203,7 @@ fn wrap_clusters(
             if cluster.text != "\n"
                 && !cluster.tab
                 && !cluster.text.chars().all(char::is_whitespace)
-                && line_width + cluster.width - cluster.tracking > width
+                && line_width + cluster.width - cluster.tracking > width + FIT_EPSILON_PX
                 && cursor > start
             {
                 end = last_break
@@ -9057,6 +9057,16 @@ mod tests {
         let mut changed = content(false);
         changed.paragraphs[0].runs[0].style.line_font_size_pt = 24.0;
         assert_ne!(base, key(&changed));
+    }
+
+    #[test]
+    fn a_line_that_fills_the_width_exactly_does_not_wrap() {
+        let renderer = renderer();
+        let paragraph = paragraph(&renderer, "l", "word word");
+        let mut clusters = shape_paragraph(&renderer.fonts, &paragraph, 1.0).unwrap();
+        let total: f32 = clusters.iter().map(|cluster| cluster.width).sum();
+        let lines = wrap_clusters(&mut clusters, total - 0.005, 0.0, 0.0, &[], 48.0);
+        assert_eq!(lines.len(), 1, "{lines:?}");
     }
 
     fn paragraph(renderer: &SlideRenderer, alignment: &str, text: &str) -> ResolvedParagraph {
