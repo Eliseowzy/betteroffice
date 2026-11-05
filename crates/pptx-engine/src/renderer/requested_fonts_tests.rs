@@ -157,7 +157,7 @@ fn assert_agreement(session: &DeckSession) {
 
 #[test]
 fn theme_explicit_script_and_field_requests_agree_with_layout() {
-    let scripts = r#"<a:r><a:rPr><a:latin typeface="Latin For Scripts"/><a:ea typeface="Unused EA"/><a:cs typeface="Unused CS"/></a:rPr><a:t>日本語 العربية</a:t></a:r>"#;
+    let scripts = r#"<a:r><a:rPr><a:latin typeface="Latin For Scripts"/><a:ea typeface="Direct EA"/><a:cs typeface="Unused CS"/></a:rPr><a:t>日本語 العربية</a:t></a:r>"#;
     let field = r#"<a:fld id="number" type="slidenum"><a:rPr i="1"><a:latin typeface="Field Face"/></a:rPr><a:t>1</a:t></a:fld>"#;
     let slide = [
         text_shape(2, "+mn-lt"),
@@ -191,6 +191,7 @@ fn theme_explicit_script_and_field_requests_agree_with_layout() {
             "Minor EA",
             "Major CS",
             "Latin For Scripts",
+            "Direct EA",
             "Field Face",
             "Symbol"
         ]

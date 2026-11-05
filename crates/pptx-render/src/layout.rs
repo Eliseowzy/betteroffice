@@ -4757,15 +4757,19 @@ fn resolve_style(
         ..
     } = resolve_font_request(theme, direct, fallback);
     let mut face = renderer.resolve_face(&family, bold, italic, substitutions)?;
-    face.east_asian = east_asian_family(
+    let east_asian = east_asian_family(
         theme,
         direct_east_asian,
         fallback,
         renderer.east_asian_script.as_deref(),
-    )
-    .filter(|east_asian| normalize_family(east_asian) != normalize_family(&family))
-    .and_then(|east_asian| renderer.registered_face(&east_asian, bold, italic))
-    .map(Box::new);
+    );
+    attach_east_asian_face(
+        renderer,
+        &mut face,
+        east_asian,
+        (&family, bold, italic),
+        substitutions,
+    );
     face.east_asian_language = fallback
         .and_then(|properties| properties.language.as_deref())
         .is_some_and(|language| han_script_for_language(language).is_some());
@@ -4910,6 +4914,28 @@ fn run_features(separate: bool, kerned: bool) -> &'static [ShapeFeature] {
 
 /// One shaped line of chart text, in the family, weight, slant and pixel size
 /// the plot geometry asked for.
+/// Gives `face` the registered `east_asian` face, logging the family as
+/// substituted by `face` when none is registered.
+fn attach_east_asian_face(
+    renderer: &SlideRenderer,
+    face: &mut FontFace,
+    east_asian: Option<String>,
+    (family, bold, italic): (&str, bool, bool),
+    substitutions: &mut SubstitutionLog,
+) {
+    let Some(east_asian) =
+        east_asian.filter(|east_asian| normalize_family(east_asian) != normalize_family(family))
+    else {
+        return;
+    };
+    face.east_asian = renderer
+        .registered_face(&east_asian, bold, italic)
+        .map(Box::new);
+    if face.east_asian.is_none() {
+        substitutions.record(&east_asian, &normalize_family(&east_asian), &face.family);
+    }
+}
+
 /// Chart text carries no `a:ea` of its own here, so its East Asian characters
 /// take the theme's minor East Asian font, as PowerPoint draws them.
 fn chart_east_asian_family(theme: &Theme, default_script: Option<&str>) -> Option<String> {
@@ -4930,10 +4956,14 @@ fn chart_text_primitive(
         ..
     } = chart_font_request(theme, &text.font);
     let mut face = renderer.resolve_face(&family, bold, italic, substitutions)?;
-    face.east_asian = chart_east_asian_family(theme, renderer.east_asian_script.as_deref())
-        .filter(|east_asian| normalize_family(east_asian) != normalize_family(&family))
-        .and_then(|east_asian| renderer.registered_face(&east_asian, bold, italic))
-        .map(Box::new);
+    let east_asian = chart_east_asian_family(theme, renderer.east_asian_script.as_deref());
+    attach_east_asian_face(
+        renderer,
+        &mut face,
+        east_asian,
+        (&family, bold, italic),
+        substitutions,
+    );
     let size_px = safe_geometry(text.font.size_px as f32).clamp(1.0, 4_096.0);
     let tracking = safe_geometry(text.font.letter_spacing_px as f32);
     let browser_metrics = face.line.filter(|_| face.id.to_u32() == BROWSER_FONT_ID);
