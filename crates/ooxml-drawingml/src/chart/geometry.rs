@@ -1041,6 +1041,13 @@ pub fn plot_chart_into<S: PlotSink + ?Sized>(chart: &PlotChart<'_>, rect: PlotRe
                 primary_category_axis.is_some_and(|primary| std::ptr::eq(axis, primary))
             });
     }
+    // The value axis picks its unit before the plot is placed, so its labels
+    // and its gridlines agree on one estimate of the plot's height.
+    let value_extent =
+        height - title_h - CHART_PAD - 2.0 * LABEL_LINE_EM * label_style.font.size_px;
+    for family in &mut families {
+        family.value_extent = (!family.transposed()).then_some(value_extent.max(0.0));
+    }
     // Every family on the primary axes hangs its labels off the one plot, so
     // each side takes the widest band any of them needs.
     let bands = families
@@ -1222,6 +1229,7 @@ fn plot_families<'a>(
                     .find(|axis| axis.kind != PlotAxisKind::Value),
                 secondary: false,
                 suppress_category_labels: false,
+                value_extent: None,
             })
             .into_iter()
             .collect();
@@ -1258,6 +1266,7 @@ fn plot_families<'a>(
                     _ => false,
                 },
                 suppress_category_labels: false,
+                value_extent: None,
             }
         })
         .collect()
@@ -1687,6 +1696,8 @@ struct PlotFamily<'a> {
     secondary: bool,
     /// The primary category axis governs labels for this secondary family.
     suppress_category_labels: bool,
+    /// Estimated plot height along an upright value axis.
+    value_extent: Option<f64>,
 }
 
 impl<'a> PlotFamily<'a> {
@@ -2770,24 +2781,34 @@ fn nice_unit(rough: f64) -> f64 {
     }
 }
 
-/// Excel's automatic major unit, which PowerPoint inherits and which does not
-/// depend on how large the chart is drawn: the decade below the range, stepped
-/// up to 2 or 5 decades once it would otherwise draw ten or twenty gridlines.
-/// Measured against PowerPoint: a stacked column topping out at 60 is drawn
-/// 0..70 in tens, never 0..60 in fives (#797).
-fn excel_unit(range: f64) -> f64 {
+/// Excel's automatic major unit, which PowerPoint inherits: the smallest
+/// `{1, 2, 5} x 10^k` that splits `range` into at most ten intervals, fewer when
+/// `extent` cannot give each interval a label em.
+/// Measured against PowerPoint: 0..63 is drawn in tens (#797), 0..4.83 in halves.
+fn excel_unit(range: f64, extent: Option<(f64, f64)>) -> f64 {
+    const MAX_INTERVALS: f64 = 10.0;
     if !range.is_finite() || range <= 0.0 {
         return 1.0;
     }
-    let major = fmath::pow(10.0, fmath::log10(range).round() - 1.0);
-    let steps = range / major;
-    if steps >= 20.0 {
-        major * 5.0
-    } else if steps >= 10.0 {
-        major * 2.0
-    } else {
-        major
+    let cap = extent
+        .map(|(extent, font_px)| (extent / font_px).floor())
+        .filter(|cap| cap.is_finite())
+        .map_or(MAX_INTERVALS, |cap| cap.clamp(2.0, MAX_INTERVALS));
+    let mut unit = fmath::pow(10.0, fmath::log10(range / cap).floor());
+    for _ in 0..8 {
+        for step in [1.0, 2.0, 5.0] {
+            let candidate = unit * step;
+            if (range / candidate - 1e-9).ceil() <= cap {
+                return if candidate > 0.0 && candidate.is_finite() {
+                    candidate
+                } else {
+                    1.0
+                };
+            }
+        }
+        unit *= 10.0;
     }
+    nice_unit(range / cap)
 }
 
 /// Major intervals to aim for along `extent` px: one label per 20px, clamped to `2..=12`.
@@ -2907,13 +2928,13 @@ fn normalize_value_range(
             if span.is_finite() {
                 match rule {
                     ValueRangeRule::Scatter { intervals } => nice_unit(span / intervals),
-                    ValueRangeRule::Value => excel_unit(span),
+                    ValueRangeRule::Value => excel_unit(span, None),
                 }
             } else {
                 let span = max * 0.5 - min * 0.5;
                 let half_unit = match rule {
                     ValueRangeRule::Scatter { intervals } => nice_unit(span / intervals),
-                    ValueRangeRule::Value => excel_unit(span),
+                    ValueRangeRule::Value => excel_unit(span, None),
                 };
                 (half_unit * 2.0).min(f64::MAX)
             }
@@ -3003,7 +3024,14 @@ fn value_scale(family: PlotFamily<'_>) -> ValueScale {
         .axis
         .and_then(|axis| axis.major_unit)
         .filter(|unit| unit.is_finite() && *unit > 0.0)
-        .unwrap_or_else(|| excel_unit(max - min));
+        .unwrap_or_else(|| {
+            excel_unit(
+                max - min,
+                family
+                    .value_extent
+                    .map(|extent| (extent, family.label.font.size_px)),
+            )
+        });
     if log_base.is_none() {
         if pinned_min.is_none() {
             min = round_to_unit(min, unit, false);
@@ -6110,6 +6138,7 @@ mod tests {
             category_axis: None,
             secondary: false,
             suppress_category_labels: false,
+            value_extent: None,
         }
     }
 
@@ -6291,6 +6320,17 @@ mod tests {
     }
 
     #[test]
+    fn the_auto_major_unit_keeps_at_most_ten_intervals_the_plot_can_hold() {
+        assert_eq!(excel_unit(4.83, None), 0.5);
+        assert_eq!(excel_unit(63.0, None), 10.0);
+        assert_eq!(excel_unit(21.0, None), 5.0);
+        assert_eq!(excel_unit(8.4, None), 1.0);
+        assert_eq!(excel_unit(4.83, Some((388.0, 24.0))), 0.5);
+        assert_eq!(excel_unit(4.83, Some((150.0, 24.0))), 1.0);
+        assert_eq!(excel_unit(4.83, Some((290.0, 24.0))), 0.5);
+    }
+
+    #[test]
     fn inverted_value_axis_pins_match_main_bounds_and_ticks() {
         let data = source(&[1.0]);
         let chart = PlotChart {
@@ -6307,13 +6347,16 @@ mod tests {
         let scale = value_scale(family(&chart, &views, &label));
         assert_eq!(scale.min.to_bits(), 10.0_f64.to_bits());
         assert_eq!(scale.max.to_bits(), 11.0_f64.to_bits());
-        assert_eq!(scale.unit.to_bits(), 0.2_f64.to_bits());
+        assert_eq!(scale.unit.to_bits(), 0.1_f64.to_bits());
         assert_eq!(
             axis_ticks(scale, None)
                 .into_iter()
                 .map(f64::to_bits)
                 .collect::<Vec<_>>(),
-            [10.0_f64, 10.2, 10.4, 10.6, 10.8, 11.0].map(f64::to_bits)
+            [
+                10.0_f64, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8, 10.9, 11.0
+            ]
+            .map(f64::to_bits)
         );
     }
 
@@ -7606,7 +7649,7 @@ mod tests {
                                                         / target_intervals(xy_plot().w),
                                                 )
                                             } else {
-                                                excel_unit(expected_max - expected_min)
+                                                excel_unit(expected_max - expected_min, None)
                                             }
                                         });
                                         if min.is_none() {
@@ -9507,7 +9550,7 @@ mod tests {
                 .filter(|op| matches!(op, PlotOp::Line { color, .. } if color == CHART_GRID_COLOR))
                 .count()
         };
-        assert_eq!(grid(true), 5);
+        assert_eq!(grid(true), 9);
         assert_eq!(grid(false), 0);
     }
 
@@ -9567,7 +9610,7 @@ mod tests {
             ops.iter()
                 .filter(|op| matches!(op, PlotOp::Line { color, .. } if color == CHART_GRID_COLOR))
                 .count(),
-            5
+            9
         );
     }
 
@@ -10180,8 +10223,8 @@ mod tests {
         };
         assert_eq!(ticks(None), 0);
         assert_eq!(ticks(Some("none")), 0);
-        assert_eq!(ticks(Some("out")), 5);
-        assert_eq!(ticks(Some("cross")), 5);
+        assert_eq!(ticks(Some("out")), 9);
+        assert_eq!(ticks(Some("cross")), 9);
     }
 
     #[test]
@@ -10881,8 +10924,8 @@ mod tests {
         };
         assert_eq!(
             lines("bar"),
-            (5, 6),
-            "a bar chart draws vertical gridlines, five tick marks and the left frame line"
+            (9, 10),
+            "a bar chart draws vertical gridlines, nine tick marks and the left frame line"
         );
         assert_eq!(
             lines("column"),
