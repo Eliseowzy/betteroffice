@@ -4,8 +4,8 @@ use std::collections::{BTreeSet, HashMap};
 
 use ooxml_drawingml::GeometryPathCommand;
 use ooxml_drawingml::chart::{
-    CHART_FONT_FAMILY, ChartSpace, PlotChart, PlotDataLabels, PlotFill, PlotFont, PlotOp, PlotRect,
-    PlotSink, PlotTextAlign, PlotTextStyle, chart_aria_label, plot_chart_into,
+    CHART_FONT_FAMILY, ChartSpace, PlotChart, PlotDataLabels, PlotFill, PlotFont, PlotLine, PlotOp,
+    PlotRect, PlotSink, PlotTextAlign, PlotTextStyle, chart_aria_label, plot_chart_into,
 };
 use ooxml_text::paragraph_scripts_with_han_fallback;
 
@@ -236,12 +236,26 @@ fn plot_model_with_font<'a>(space: &'a ChartSpace, default_font: &'a str) -> Plo
     chart
 }
 
-/// Supplies value labels only for legacy charts without `c:dLbls`, and leaves
-/// a chart area with no `c:spPr` unfilled, as PowerPoint draws it.
+/// The `tx1` hairline Office's default chart style strokes an axis or
+/// gridline with when its `c:spPr` says nothing.
+const STYLE_LINE: PlotLine<'static> = PlotLine {
+    none: false,
+    color: Some("#000000"),
+    width_emu: Some(9525.0),
+};
+
+/// Supplies value labels only for legacy charts without `c:dLbls`, leaves a
+/// chart area with no `c:spPr` unfilled, and strokes unstyled axes, major gridlines
+/// and text in black, as PowerPoint draws them.
 fn plot_model(space: &ChartSpace) -> PlotChart<'_> {
     let mut chart = PlotChart::from(space);
     if space.fill.is_none() {
         chart.fill = Some(PlotFill::None);
+    }
+    chart.text.chart.color.get_or_insert("#000000");
+    for axis in &mut chart.axes {
+        axis.line.get_or_insert(STYLE_LINE);
+        axis.major_gridline.get_or_insert(STYLE_LINE);
     }
     for (group, plotted) in space.plot_groups.iter().zip(chart.plot_groups.iter_mut()) {
         if !group.show_data_labels {

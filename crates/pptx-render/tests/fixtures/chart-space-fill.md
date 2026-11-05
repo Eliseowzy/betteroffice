@@ -21,7 +21,8 @@ With the fix:
 
 - Slide 1 grounds the frame in `#01BFBD`, the mean of the two pattern colours,
   draws no value-axis rule, and strokes the bottom rule `#D9D9D9` at 1px.
-- Slide 2 draws no ground rectangle at all; the two `#666666` rules stay.
+- Slide 2 draws no ground rectangle at all; its two undeclared rules take the
+  default style's black `tx1` hairline, as PowerPoint draws them.
 - Slide 3 grounds the frame in `#F5F7FA`, strokes the left rule `#6254E7` at the
   1px hairline floor (`6350` EMU is 0.67px) and the bottom rule `#BFBFBF` at 2px.
 

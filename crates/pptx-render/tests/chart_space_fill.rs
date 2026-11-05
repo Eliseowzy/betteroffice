@@ -147,11 +147,11 @@ fn a_chart_space_fill_and_axis_lines_reach_the_display_list() {
     assert_eq!(bare_rules.len(), 2, "{bare_rules:?}");
     assert_rule(
         &bare_rules[0],
-        (143.62305, 137.96, 0.0, 247.54, "#666666", 1.0),
+        (143.62305, 137.96, 0.0, 247.54, "#000000", 1.0),
     );
     assert_rule(
         &bare_rules[1],
-        (143.62305, 385.5, 470.74414, 0.0, "#666666", 1.0),
+        (143.62305, 385.5, 470.74414, 0.0, "#000000", 1.0),
     );
 
     let solid = &slides[2];

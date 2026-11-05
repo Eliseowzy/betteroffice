@@ -24,8 +24,9 @@ After the fix, values `0, 10, 20, 30, 40` have x positions
 `156, 252.5, 349, 445.5, 542` and baseline 412. Category 1 is at baseline 359.6,
 below Category 3 at 188.93333. Category text ends at x=148.91602, before the
 plot at x=172. The first purple bar starts at `(172, 338.26666)` with width
-115.8 and height 34.133335. North remains `#6254E7`, South `#1FA97A`, text
-`#222222`, axes `#666666`, and gridlines `#D9D9D9`.
+115.8 and height 34.133335. North remains `#6254E7`, South `#1FA97A`; unstyled
+text, axes and major gridlines take the default style's black, and minor gridlines
+stay `#D9D9D9`.
 
 Reserving an 18px axis header puts the category title at baseline 137, clear of
 the chart title at baseline 114. On slide 4, secondary ticks sit at baseline 136

@@ -61,7 +61,7 @@ fn horizontal_bar_fixture_transposes_axes_without_losing_series_or_labels() {
                 if index == 4 { 790.2217 - x } else { x },
             );
             close(line.baseline, 406.0);
-            assert!(line.runs.iter().all(|run| run.color == "#222222"));
+            assert!(line.runs.iter().all(|run| run.color == "#000000"));
         }
         close(label(primitives, "Quarter").baseline, 150.96);
         close(label(primitives, "Millions").baseline, 418.5);

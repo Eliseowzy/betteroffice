@@ -3251,6 +3251,23 @@ fn emit_axes<S: PlotSink + ?Sized>(
         axis.is_none_or(|axis| axis.major_gridlines && !draws_no_line(axis.major_gridline));
     let minor_grid =
         axis.is_some_and(|axis| axis.minor_gridlines && !draws_no_line(axis.minor_gridline));
+    let gridline_stroke = |line: Option<PlotLine<'_>>, default_px: f64| {
+        let color = line.and_then(|line| line.color).map(hex);
+        (
+            color.unwrap_or_else(|| CHART_GRID_COLOR.to_owned()),
+            match line.and_then(|line| line.width_emu) {
+                Some(emu) if emu.is_finite() => (emu / EMU_PER_PIXEL).clamp(0.25, MAX_LINE_PX),
+                _ => default_px,
+            },
+        )
+    };
+    let (major_color, major_width) =
+        gridline_stroke(axis.and_then(|axis| axis.major_gridline), 0.5);
+    let (minor_color, minor_width) =
+        gridline_stroke(axis.and_then(|axis| axis.minor_gridline), 0.25);
+    let major_stroke = (major_color.as_str(), major_width);
+    let minor_stroke = (minor_color.as_str(), minor_width);
+    let tick_color = axis_stroke(axis).map_or(CHART_AXIS_COLOR, |(color, _)| color);
     let number_format = axis.and_then(|axis| axis.number_format);
     let tick_style = &family.scoped(axis.map(|axis| axis.text).unwrap_or_default());
     let (edge, outward) = match (transposed, family.secondary) {
@@ -3267,7 +3284,7 @@ fn emit_axes<S: PlotSink + ?Sized>(
                 plot,
                 transposed,
                 scale.tick(plot, transposed, value),
-                0.25,
+                minor_stroke,
             );
         }
     }
@@ -3281,7 +3298,7 @@ fn emit_axes<S: PlotSink + ?Sized>(
         }
         let at = scale.tick(plot, transposed, value);
         if major_grid {
-            push_value_gridline(ops, plot, transposed, at, 0.5);
+            push_value_gridline(ops, plot, transposed, at, major_stroke);
         }
         if hidden {
             continue;
@@ -3329,9 +3346,9 @@ fn emit_axes<S: PlotSink + ?Sized>(
         if let Some((outer, inner)) = tick_extents(axis.and_then(|axis| axis.major_tick_mark)) {
             let (near, far) = (edge + outward * outer, edge - outward * inner);
             if transposed {
-                push_line(ops, at, near, at, far, CHART_AXIS_COLOR, 1.0);
+                push_line(ops, at, near, at, far, tick_color, 1.0);
             } else {
-                push_line(ops, near, at, far, at, CHART_AXIS_COLOR, 1.0);
+                push_line(ops, near, at, far, at, tick_color, 1.0);
             }
         }
     }
@@ -3462,28 +3479,12 @@ fn push_value_gridline<S: PlotSink + ?Sized>(
     plot: PlotArea,
     transposed: bool,
     at: f64,
-    width: f64,
+    (color, width): (&str, f64),
 ) {
     if transposed {
-        push_line(
-            ops,
-            at,
-            plot.y,
-            at,
-            plot.y + plot.h,
-            CHART_GRID_COLOR,
-            width,
-        );
+        push_line(ops, at, plot.y, at, plot.y + plot.h, color, width);
     } else {
-        push_line(
-            ops,
-            plot.x,
-            at,
-            plot.x + plot.w,
-            at,
-            CHART_GRID_COLOR,
-            width,
-        );
+        push_line(ops, plot.x, at, plot.x + plot.w, at, color, width);
     }
 }
 /// What a point's data label reads, composing the `c:dLbls` fields the series
