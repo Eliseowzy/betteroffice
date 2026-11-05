@@ -242,6 +242,40 @@ fn get_font(font: Option<&ThemeFont>, script: &str, latin_default: &str) -> Stri
     }
 }
 
+/// The family PowerPoint draws East Asian text in for an `a:ea` typeface:
+/// a theme reference (`+mj-ea`, `+mn-ea`) resolves to the theme's `ea` face,
+/// and where that is empty to the theme's supplemental font for `script`
+/// (`Hans`, `Hant`, `Jpan`, `Hang`), the one PowerPoint picks for the text's
+/// language. `None` when neither names a face.
+pub fn resolve_theme_east_asian_font(
+    theme: Option<&Theme>,
+    reference: &str,
+    script: Option<&str>,
+) -> Option<String> {
+    let reference = reference.trim();
+    if !reference.starts_with('+') {
+        return (!reference.is_empty()).then(|| reference.to_owned());
+    }
+    let lower = reference.trim_start_matches('+').to_ascii_lowercase();
+    let major = match lower.as_str() {
+        "mj-ea" => true,
+        "mn-ea" => false,
+        _ => return None,
+    };
+    let font = theme.map(|theme| {
+        if major {
+            &theme.font_scheme.major_font
+        } else {
+            &theme.font_scheme.minor_font
+        }
+    })?;
+    nonempty(Some(&font.ea)).or_else(|| {
+        script
+            .and_then(|script| font.fonts.get(script))
+            .and_then(|family| nonempty(Some(family)))
+    })
+}
+
 pub fn resolve_theme_font_ref(theme: Option<&Theme>, reference: &str) -> String {
     if reference.is_empty() {
         return "Calibri".to_owned();
@@ -311,6 +345,44 @@ fn nonempty(value: Option<&str>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn an_empty_theme_ea_face_falls_to_the_script_font_for_the_language() {
+        let mut theme = Theme::default();
+        theme
+            .font_scheme
+            .major_font
+            .fonts
+            .insert("Hans".into(), "黑体".into());
+        theme
+            .font_scheme
+            .major_font
+            .fonts
+            .insert("Jpan".into(), "Yu Gothic".into());
+        assert_eq!(
+            super::resolve_theme_east_asian_font(Some(&theme), "+mj-ea", Some("Hans")).as_deref(),
+            Some("黑体")
+        );
+        assert_eq!(
+            super::resolve_theme_east_asian_font(Some(&theme), "+mj-ea", Some("Jpan")).as_deref(),
+            Some("Yu Gothic")
+        );
+        // No language and no ea face: nothing to draw East Asian text in.
+        assert_eq!(
+            super::resolve_theme_east_asian_font(Some(&theme), "+mj-ea", None),
+            None
+        );
+        // A named ea face wins over the script fonts; a family passes through.
+        theme.font_scheme.major_font.ea = "Microsoft YaHei".into();
+        assert_eq!(
+            super::resolve_theme_east_asian_font(Some(&theme), "+mj-ea", Some("Hans")).as_deref(),
+            Some("Microsoft YaHei")
+        );
+        assert_eq!(
+            super::resolve_theme_east_asian_font(Some(&theme), "宋体", None).as_deref(),
+            Some("宋体")
+        );
+    }
+
     use super::*;
 
     fn inverted_theme() -> Theme {

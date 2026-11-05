@@ -1109,6 +1109,20 @@ impl Presentation {
             .hit_test(x, y))
     }
 
+    /// Sets the language PowerPoint would edit in (`zh-CN`, `ja-JP`, ...).
+    /// East Asian text that names no language of its own is drawn in the
+    /// theme's supplemental font for that language's script wherever the
+    /// theme's `ea` face is empty, as PowerPoint does. `None` (the default)
+    /// leaves such text to the font fallbacks.
+    pub fn set_default_east_asian_language(&self, language: Option<&str>) {
+        if self.renderer().set_default_east_asian_language(language) {
+            self.resolved_fonts
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clear();
+        }
+    }
+
     pub(crate) fn renderer(&self) -> MutexGuard<'_, SlideRenderer> {
         self.renderer.lock().unwrap_or_else(PoisonError::into_inner)
     }

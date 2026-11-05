@@ -8,8 +8,8 @@ use ooxml_drawingml::{
     TableCellBorders as StyleCellBorders, TableCellPosition, TableCellStyle, TableStyle,
     TableStyleFlags, Theme, ThemeFormatScheme, get_theme_color, normalize_table_column_widths,
     preset_geometry_to_path, resolve_color_value_to_hex_with_theme,
-    resolve_color_value_to_rgba_hex, resolve_theme_font_ref, style_effects, style_fill,
-    style_outline, style_reference_color,
+    resolve_color_value_to_rgba_hex, resolve_theme_east_asian_font, resolve_theme_font_ref,
+    style_effects, style_fill, style_outline, style_reference_color,
 };
 use ooxml_text::family_metrics::{
     FamilyMetrics, family_advance, family_cluster_advance, family_composed_kana_advance,
@@ -107,6 +107,9 @@ struct FontFace {
     /// The face whose own metrics size the line when `line` names none: the
     /// face itself, or for a coverage fallback the face of the run it stands in.
     line_id: FontId,
+    /// The run's `a:ea` face, which draws its East Asian characters even where
+    /// this face has glyphs for them, as PowerPoint does.
+    east_asian: Option<Box<FontFace>>,
 }
 
 fn needs_visible_glyph(character: char) -> bool {
@@ -219,6 +222,9 @@ pub struct SlideRenderer {
     fallback_family: Option<String>,
     font_count: usize,
     browser_coverage_fallback: bool,
+    /// The theme script (`Hans`, `Hant`, `Jpan`, `Hang`) whose supplemental font
+    /// draws East Asian text no language decides: PowerPoint's editing language.
+    east_asian_script: Option<String>,
     /// Laid-out text reused across display-list builds and slides.
     text_layouts: Mutex<TextLayoutCache>,
     baseline_stories: Mutex<HashMap<String, CachedBaselineStory>>,
@@ -242,9 +248,47 @@ impl SlideRenderer {
             fallback_family: None,
             font_count: 0,
             browser_coverage_fallback: false,
+            east_asian_script: None,
             text_layouts: Mutex::new(TextLayoutCache::default()),
             baseline_stories: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Sets the language PowerPoint would edit in (`zh-CN`, `ja-JP`, ...): East
+    /// Asian text whose own language is unset takes the theme's supplemental
+    /// font for that language's script when the theme's `ea` face is empty.
+    /// Returns whether the setting changed.
+    pub fn set_default_east_asian_language(&mut self, language: Option<&str>) -> bool {
+        let script = language
+            .and_then(theme_script_for_language)
+            .map(str::to_owned);
+        if self.east_asian_script == script {
+            return false;
+        }
+        self.east_asian_script = script;
+        if let Ok(cache) = self.text_layouts.get_mut() {
+            cache.clear();
+        }
+        true
+    }
+
+    /// A face registered under `family` itself, nearest in weight and slant.
+    fn registered_face(&self, family: &str, bold: bool, italic: bool) -> Option<FontFace> {
+        let requested = normalize_family(family);
+        [
+            (bold, italic),
+            (bold, false),
+            (false, italic),
+            (false, false),
+        ]
+        .into_iter()
+        .find_map(|(face_bold, face_italic)| {
+            self.faces.get(&(requested.clone(), face_bold, face_italic))
+        })
+        .map(|face| FontFace {
+            east_asian: None,
+            ..face.clone()
+        })
     }
 
     pub fn set_browser_coverage_fallback(&mut self, enabled: bool) -> bool {
@@ -289,6 +333,7 @@ impl SlideRenderer {
             widths: metrics.filter(|metrics| !runs_at_own_widths(&self.fonts, id, metrics)),
             line: metrics.filter(|metrics| !sits_on_own_baseline(&self.fonts, id, metrics)),
             line_id: id,
+            east_asian: None,
         };
         self.faces.insert((requested, bold, italic), face.clone());
         self.fallback.get_or_insert(face);
@@ -352,6 +397,7 @@ impl SlideRenderer {
                 widths: None,
                 line: None,
                 line_id: id,
+                east_asian: None,
             },
         ));
         self.font_count += 1;
@@ -417,10 +463,23 @@ impl SlideRenderer {
         italic: bool,
     ) -> Vec<(usize, Option<FontFace>)> {
         let mut pieces: Vec<(usize, Option<FontFace>)> = Vec::new();
-        if self.coverage_candidates(face).next().is_none()
+        let east_asian = face
+            .east_asian
+            .as_deref()
+            .filter(|east_asian| east_asian.id != face.id);
+        let east_asian_drawn = |character: char| {
+            east_asian.filter(|east_asian| {
+                is_east_asian(character)
+                    && self.fonts.covers(east_asian.id, character).unwrap_or(false)
+            })
+        };
+        if (self.coverage_candidates(face).next().is_none()
             || text
                 .chars()
-                .all(|character| self.fonts.covers(face.id, character).unwrap_or(true))
+                .all(|character| self.fonts.covers(face.id, character).unwrap_or(true)))
+            && !text
+                .chars()
+                .any(|character| east_asian_drawn(character).is_some())
         {
             return vec![(0, None)];
         }
@@ -428,12 +487,26 @@ impl SlideRenderer {
             let current = pieces.last().and_then(|(_, face)| face.as_ref());
             let own = self.fonts.covers(face.id, character).unwrap_or(true);
             let neutral = character.is_whitespace() || character.is_ascii_punctuation();
+            // Spaces and ASCII punctuation stay with a fallback face around
+            // them, but not with the run's East Asian face: PowerPoint draws
+            // those in the Latin face wherever it has them.
+            let in_east_asian = current.is_some_and(|current| {
+                east_asian.is_some_and(|east_asian| east_asian.id == current.id)
+            });
             let chosen = match current {
                 Some(current)
-                    if neutral && self.fonts.covers(current.id, character).unwrap_or(false) =>
+                    if neutral
+                        && !(in_east_asian && own)
+                        && self.fonts.covers(current.id, character).unwrap_or(false) =>
                 {
                     Some(current.clone())
                 }
+                _ if let Some(east_asian) = east_asian_drawn(character) => Some(FontFace {
+                    line: face.line,
+                    line_id: face.line_id,
+                    east_asian: None,
+                    ..east_asian.clone()
+                }),
                 _ if own => None,
                 _ => self.coverage_face(face, character, bold, italic),
             };
@@ -626,7 +699,10 @@ impl SlideRenderer {
         package: &PptxPackage,
         scopes: &[SlideScope],
     ) -> Result<Vec<RequestedFontFace>, RenderError> {
-        let mut requests = FontRequests::default();
+        let mut requests = FontRequests {
+            east_asian_script: self.east_asian_script.clone(),
+            ..FontRequests::default()
+        };
         for scope in scopes {
             let SlideParents {
                 slide: parsed_slide,
@@ -936,6 +1012,7 @@ impl SlideRenderer {
                 widths: Some(metrics),
                 line: Some(metrics),
                 line_id: FontId::from_u32(BROWSER_FONT_ID),
+                east_asian: None,
             });
         }
         let styles = [
@@ -1321,6 +1398,7 @@ impl<'a> TableStyleScope<'a> {
 struct FontRequests {
     seen: HashMap<(String, bool, bool), usize>,
     faces: Vec<RequestedFontFace>,
+    east_asian_script: Option<String>,
 }
 
 impl FontRequests {
@@ -1416,7 +1494,19 @@ impl FontRequests {
                         scripts.push(script);
                     }
                 }
-                self.record(resolve_font_request(theme, &run.style, fallback), &scripts);
+                let request = resolve_font_request(theme, &run.style, fallback);
+                if let Some(family) =
+                    east_asian_family(theme, fallback, self.east_asian_script.as_deref())
+                {
+                    self.record(
+                        RequestedFontFace {
+                            family,
+                            ..request.clone()
+                        },
+                        &scripts,
+                    );
+                }
+                self.record(request, &scripts);
             }
             if paragraph_marker(source.paragraph, &source.properties, &mut numbering).is_some()
                 && let Some(family) = bullet_font_request(theme, &source.properties)
@@ -4351,6 +4441,56 @@ pub struct RequestedFontFace {
     pub scripts: Vec<String>,
 }
 
+/// The theme script whose supplemental font PowerPoint uses for East Asian
+/// text in `language`.
+fn theme_script_for_language(language: &str) -> Option<&'static str> {
+    match han_script_for_language(language)? {
+        "cjk-tc" => Some("Hant"),
+        "cjk-jp" => Some("Jpan"),
+        "cjk-kr" => Some("Hang"),
+        _ => Some("Hans"),
+    }
+}
+
+/// The family a run's East Asian text is drawn in: its cascaded `a:ea`
+/// typeface, a theme reference resolved for the run's language or else the
+/// renderer's default script.
+fn east_asian_family(
+    theme: &Theme,
+    fallback: Option<&RunProperties>,
+    default_script: Option<&str>,
+) -> Option<String> {
+    let reference = fallback?.east_asian_family.as_deref()?;
+    let script = fallback
+        .and_then(|properties| properties.language.as_deref())
+        .and_then(theme_script_for_language)
+        .or(default_script);
+    resolve_theme_east_asian_font(Some(theme), reference, script)
+        .filter(|family| family.len() <= 256)
+}
+
+/// Characters PowerPoint draws in a run's East Asian face: CJK ideographs,
+/// kana, hangul, CJK symbols and full-width forms. Punctuation East Asian text
+/// shares with Latin (curly quotes, the middle dot) stays in the Latin face,
+/// which is what PowerPoint's export shows.
+fn is_east_asian(character: char) -> bool {
+    matches!(character as u32,
+        0x1100..=0x11FF
+        | 0x2E80..=0x2FDF
+        | 0x3000..=0x303F
+        | 0x3040..=0x30FF
+        | 0x3100..=0x318F
+        | 0x31A0..=0x31FF
+        | 0x3200..=0x4DBF
+        | 0x4E00..=0x9FFF
+        | 0xA960..=0xA97F
+        | 0xAC00..=0xD7FF
+        | 0xF900..=0xFAFF
+        | 0xFE30..=0xFE4F
+        | 0xFF00..=0xFFEF
+        | 0x2_0000..=0x3_FFFF)
+}
+
 fn resolve_font_request(
     theme: &Theme,
     direct: &TextStyle,
@@ -4458,7 +4598,11 @@ fn resolve_style(
         italic,
         ..
     } = resolve_font_request(theme, direct, fallback);
-    let face = renderer.resolve_face(&family, bold, italic, substitutions)?;
+    let mut face = renderer.resolve_face(&family, bold, italic, substitutions)?;
+    face.east_asian = east_asian_family(theme, fallback, renderer.east_asian_script.as_deref())
+        .filter(|east_asian| normalize_family(east_asian) != normalize_family(&family))
+        .and_then(|east_asian| renderer.registered_face(&east_asian, bold, italic))
+        .map(Box::new);
     let color = direct
         .color
         .as_deref()
@@ -4984,6 +5128,7 @@ fn key_style(key: &mut Vec<u8>, style: &ResolvedStyle) {
                 widths,
                 line,
                 line_id,
+                east_asian,
             },
         family,
         font_size_pt,
@@ -5000,6 +5145,12 @@ fn key_style(key: &mut Vec<u8>, style: &ResolvedStyle) {
     } = style;
     key_u32(key, id.to_u32());
     key_u32(key, line_id.to_u32());
+    key_u32(
+        key,
+        east_asian
+            .as_ref()
+            .map_or(u32::MAX, |face| face.id.to_u32()),
+    );
     key_str(key, face_family);
     key_str(key, requested_family);
     key.push(u8::from(widths.is_some()));

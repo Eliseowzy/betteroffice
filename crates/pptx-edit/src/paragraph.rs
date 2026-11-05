@@ -961,6 +961,11 @@ fn merge_run_properties(target: &mut RunProperties, source: &RunProperties) {
     if source.font_family.is_some() {
         target.font_family.clone_from(&source.font_family);
     }
+    if source.east_asian_family.is_some() {
+        target
+            .east_asian_family
+            .clone_from(&source.east_asian_family);
+    }
     if source.color.is_some() {
         target.color.clone_from(&source.color);
     }

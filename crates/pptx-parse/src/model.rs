@@ -1043,6 +1043,10 @@ pub struct RunProperties {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub caps: Option<TextCaps>,
     pub font_family: Option<String>,
+    /// `a:ea/@typeface`: the face PowerPoint draws East Asian text in, a
+    /// family or a theme reference such as `+mn-ea`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub east_asian_family: Option<String>,
     pub color: Option<ColorValue>,
     pub language: Option<String>,
     pub hyperlink_relationship_id: Option<String>,
