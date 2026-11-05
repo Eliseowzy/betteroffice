@@ -252,6 +252,8 @@ pub struct FontMetrics {
     pub os2_version: u16,
     /// `OS/2` ulCodePageRange1, or 0 before table version 1 defined it.
     pub os2_code_page_range1: u32,
+    /// `OS/2` usWeightClass: 400 regular, 700 bold.
+    pub os2_weight_class: u16,
 }
 
 impl FontMetrics {
@@ -263,6 +265,12 @@ impl FontMetrics {
     pub fn use_typo_metrics(&self) -> bool {
         self.os2_version >= 4
             && self.os2_fs_selection & SelectionFlags::USE_TYPO_METRICS.bits() != 0
+    }
+
+    /// Whether the face is itself a bold weight (semibold or heavier, or
+    /// flagged bold), so asking it for bold text needs no synthetic emboldening.
+    pub fn is_bold_face(&self) -> bool {
+        self.os2_weight_class >= 600 || self.os2_fs_selection & SelectionFlags::BOLD.bits() != 0
     }
 
     /// Whether Word measures this face with the East Asian line pitch — see
@@ -546,6 +554,7 @@ impl FontStore {
             os2_fs_selection: os2.fs_selection().bits(),
             os2_version: os2.version(),
             os2_code_page_range1: os2.ul_code_page_range_1().unwrap_or(0),
+            os2_weight_class: os2.us_weight_class(),
         };
 
         // SAFETY: see the `FontEntry` field invariants — the view borrows

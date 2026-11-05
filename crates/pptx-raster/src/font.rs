@@ -2,7 +2,7 @@
 
 use ooxml_text::{FontId, FontStore, PathCmd, shape};
 use pptx_render::{PositionedTextLine, PositionedTextRun};
-use tiny_skia::{Color, Mask, Paint, Path, Pixmap, Rect, Transform};
+use tiny_skia::{Color, LineJoin, Mask, Paint, Path, Pixmap, Rect, Stroke, Transform};
 
 use crate::{RenderResources, parse_color};
 
@@ -56,6 +56,13 @@ fn paint_run(
     paint.anti_alias = true;
 
     let font = FontId::from_u32(run.font_id);
+    // Bold asked of a face with no bold weight (SimHei, SimSun): PowerPoint
+    // thickens the regular outlines in place, keeping their advances.
+    let embolden = run.bold
+        && resources
+            .fonts
+            .metrics(font)
+            .is_ok_and(|metrics| !metrics.is_bold_face());
     for glyph in &run.glyphs {
         let x = glyph.x + glyph.x_offset;
         if !x.is_finite() || !glyph.y_offset.is_finite() {
@@ -74,6 +81,21 @@ fn paint_run(
             transform,
             clip,
         )?;
+        if embolden {
+            embolden_glyph(
+                pixmap,
+                resources.fonts,
+                cache,
+                font,
+                glyph.glyph_id,
+                run.font_size_px,
+                x,
+                glyph.y_offset,
+                &paint,
+                transform,
+                clip,
+            )?;
+        }
     }
 
     if run.underline {
@@ -192,6 +214,47 @@ fn paint_glyph(
     };
     let scale = size_px / cached.upem;
     ooxml_raster::fill_glyph(pixmap, path, scale, x, y, transform, paint, clip);
+    Ok(())
+}
+
+/// How much synthetic bold widens a stroke, as a share of the em: the outline
+/// grows by half of it on each side.
+pub(crate) const SYNTHETIC_BOLD_EM: f32 = 1.0 / 14.0;
+
+/// Strokes a glyph's outline over its fill, thickening it by
+/// [`SYNTHETIC_BOLD_EM`] without moving it.
+#[allow(clippy::too_many_arguments)]
+fn embolden_glyph(
+    pixmap: &mut Pixmap,
+    fonts: &FontStore,
+    cache: &mut GlyphCache,
+    font: FontId,
+    glyph_id: u32,
+    size_px: f32,
+    x: f32,
+    y: f32,
+    paint: &Paint<'_>,
+    transform: Transform,
+    clip: Option<&Mask>,
+) -> Result<(), String> {
+    let cached = cached_glyph(cache, fonts, font, glyph_id)?;
+    let Some(path) = &cached.path else {
+        return Ok(());
+    };
+    let scale = size_px / cached.upem;
+    let stroke = Stroke {
+        width: cached.upem * SYNTHETIC_BOLD_EM,
+        line_join: LineJoin::Round,
+        ..Stroke::default()
+    };
+    let glyph_transform = Transform::from_row(scale, 0.0, 0.0, -scale, x, y);
+    pixmap.stroke_path(
+        path,
+        paint,
+        &stroke,
+        transform.pre_concat(glyph_transform),
+        clip,
+    );
     Ok(())
 }
 
