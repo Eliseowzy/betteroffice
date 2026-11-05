@@ -3011,7 +3011,7 @@ impl<'a> LayoutBuilder<'a> {
                 plan.rect(&columns, &rows),
                 Transform::default(),
                 space,
-                (0.0, 0.0),
+                [0.0; 4],
                 plan.content.clone(),
                 cell_cascade(plan.text, &plan.inherited),
             )?;
@@ -3114,7 +3114,7 @@ impl<'a> LayoutBuilder<'a> {
         rect: PxRect,
         transform: Transform,
         space: Space,
-        preset_inset: (f32, f32),
+        preset_inset: [f32; 4],
         content: TextContent,
         cascade: BodyCascade<'_>,
     ) -> Result<Option<TextHit>, RenderError> {
@@ -3136,12 +3136,12 @@ impl<'a> LayoutBuilder<'a> {
         let top = cascade.inset_top().unwrap_or(DEFAULT_INSET_VERTICAL_EMU);
         let bottom = cascade.inset_bottom().unwrap_or(DEFAULT_INSET_VERTICAL_EMU);
         let [left, top, right, bottom] = flow.layout_insets([left, top, right, bottom]);
-        let (preset_x, preset_y) = preset_inset;
+        let [preset_l, preset_t, preset_r, preset_b] = flow.layout_insets(preset_inset);
         let content_rect = PxRect {
-            x: text_rect.x + emu_to_px(left) + preset_x,
-            y: text_rect.y + emu_to_px(top) + preset_y,
-            w: (text_rect.w - emu_to_px(left + right) - preset_x * 2.0).max(1.0),
-            h: (text_rect.h - emu_to_px(top + bottom) - preset_y * 2.0).max(1.0),
+            x: text_rect.x + emu_to_px(left) + preset_l,
+            y: text_rect.y + emu_to_px(top) + preset_t,
+            w: (text_rect.w - emu_to_px(left + right) - preset_l - preset_r).max(1.0),
+            h: (text_rect.h - emu_to_px(top + bottom) - preset_t - preset_b).max(1.0),
         };
         let mut scale = if content.refit_autofit {
             let steps = [
@@ -3553,7 +3553,7 @@ impl TextFlow {
         }
     }
 
-    fn layout_insets(self, [left, top, right, bottom]: [i64; 4]) -> [i64; 4] {
+    fn layout_insets<T: Copy>(self, [left, top, right, bottom]: [T; 4]) -> [T; 4] {
         match self {
             Self::Horizontal | Self::Stacked => [left, top, right, bottom],
             Self::Vert | Self::VertLeftToRight => [top, right, bottom, left],
@@ -7288,39 +7288,90 @@ fn image_dpi(bytes: &[u8]) -> Option<f32> {
     None
 }
 
-/// The rectangle a preset holds its text in. Most presets use the whole frame,
-/// but a rounded box and an ellipse inset theirs so the text clears the curve —
-/// the `a:rect` each preset declares, for the two the corpus writes text into.
-fn geometry_text_inset(shape: Option<&ShapeNode>, rect: PxRect) -> (f32, f32) {
+/// The rectangle a preset holds its text in. Most presets use the whole frame;
+/// the ones below declare a smaller `a:rect` in ECMA-376 `presetShapeDefinitions`
+/// (a rounded box and an ellipse clear their curve, a chevron keeps its text in
+/// the band between its notches), and PowerPoint wraps the text to that rect.
+/// Returned as `[left, top, right, bottom]` insets from the frame, in px.
+fn geometry_text_inset(shape: Option<&ShapeNode>, rect: PxRect) -> [f32; 4] {
     let Some(ShapeNode::Shape(shape)) = shape else {
-        return (0.0, 0.0);
+        return [0.0; 4];
     };
-    preset_text_inset(
-        &shape.geometry,
-        shape.adjust_values.get("adj").copied(),
-        rect.w,
-        rect.h,
-    )
-    .unwrap_or((0.0, 0.0))
+    preset_text_inset(&shape.geometry, &shape.adjust_values, rect.w, rect.h).unwrap_or([0.0; 4])
 }
 
 fn preset_text_inset(
     geometry: &str,
-    adjust: Option<f64>,
+    adjust: &BTreeMap<String, f64>,
     width: f32,
     height: f32,
-) -> Option<(f32, f32)> {
+) -> Option<[f32; 4]> {
     const DIAGONAL: f32 = std::f32::consts::FRAC_1_SQRT_2;
+    let (w, h) = (width, height);
+    let ss = w.min(h);
+    if ss <= 0.0 {
+        return None;
+    }
+    // An adjust value in 1/100,000ths, clamped like the preset's `pin` guide.
+    let adj = |name: &str, default: f32, max: f32| {
+        (adjust
+            .get(name)
+            .map(|value| *value as f32)
+            .unwrap_or(default))
+        .clamp(0.0, max)
+    };
+    let width_max = 100_000.0 * w / ss;
     match geometry {
         "roundRect" | "round1Rect" | "round2SameRect" | "round2DiagRect" => {
-            let adjust = adjust.unwrap_or(16_667.0).clamp(0.0, 50_000.0) as f32 / 100_000.0;
-            let inset = width.min(height) * adjust * (1.0 - DIAGONAL);
-            Some((inset, inset))
+            let a = adj("adj", 16_667.0, 50_000.0) / 100_000.0;
+            let inset = ss * a * (1.0 - DIAGONAL);
+            Some([inset; 4])
         }
-        "ellipse" => Some((
-            width * (1.0 - DIAGONAL) / 2.0,
-            height * (1.0 - DIAGONAL) / 2.0,
-        )),
+        "ellipse" => {
+            let (x, y) = (w * (1.0 - DIAGONAL) / 2.0, h * (1.0 - DIAGONAL) / 2.0);
+            Some([x, y, x, y])
+        }
+        "chevron" => {
+            let x1 = ss * adj("adj", 50_000.0, width_max) / 100_000.0;
+            let x2 = w - x1;
+            // `il`/`ir`: the band between the notches, or the whole frame once
+            // the notches meet.
+            if x2 > x1 {
+                Some([x1, 0.0, w - x2, 0.0])
+            } else {
+                Some([0.0; 4])
+            }
+        }
+        "homePlate" => {
+            let x1 = w - ss * adj("adj", 50_000.0, width_max) / 100_000.0;
+            Some([0.0, 0.0, w - (x1 + w) / 2.0, 0.0])
+        }
+        "rightArrow" | "leftArrow" => {
+            let a1 = adj("adj1", 50_000.0, 100_000.0);
+            let head = ss * adj("adj2", 50_000.0, width_max) / 100_000.0;
+            let half = h / 2.0;
+            let y1 = half - h * a1 / 200_000.0;
+            let into_head = if half > 0.0 { y1 * head / half } else { 0.0 };
+            let shaft_end = (w - head + into_head).min(w);
+            if geometry == "rightArrow" {
+                Some([0.0, y1, w - shaft_end, y1])
+            } else {
+                Some([(head - into_head).max(0.0), y1, 0.0, y1])
+            }
+        }
+        "triangle" => {
+            let a = adj("adj", 50_000.0, 100_000.0);
+            let x1 = w * a / 200_000.0;
+            let x2 = w * (a + 100_000.0) / 200_000.0;
+            Some([x1, h / 2.0, w - x2, 0.0])
+        }
+        "diamond" => Some([w / 4.0, h / 4.0, w / 4.0, h / 4.0]),
+        "parallelogram" => {
+            let a = adj("adj", 25_000.0, width_max);
+            let q2 = (1.0 + 5.0 * a / width_max) / 12.0;
+            let (x, y) = (q2 * w, q2 * h);
+            Some([x, y, x, y])
+        }
         _ => None,
     }
 }
@@ -8419,13 +8470,31 @@ mod tests {
             w: 400.0,
             h: 200.0,
         };
-        assert_eq!(preset_text_inset("rect", None, frame.w, frame.h), None);
-        let (x, y) = preset_text_inset("roundRect", None, frame.w, frame.h).unwrap();
+        let none = BTreeMap::new();
+        assert_eq!(preset_text_inset("rect", &none, frame.w, frame.h), None);
+        let [x, y, ..] = preset_text_inset("roundRect", &none, frame.w, frame.h).unwrap();
         assert!((x - 9.76).abs() < 0.05, "{x}");
         assert!((x - y).abs() < 1e-3);
-        let (x, y) = preset_text_inset("ellipse", None, frame.w, frame.h).unwrap();
+        let [x, y, ..] = preset_text_inset("ellipse", &none, frame.w, frame.h).unwrap();
         assert!((x - 58.58).abs() < 0.05, "{x}");
         assert!((y - 29.29).abs() < 0.05, "{y}");
+    }
+
+    #[test]
+    fn a_chevron_keeps_its_text_between_the_notches() {
+        // ECMA-376 chevron: x1 = ss * adj, il = x1, ir = r - x1.
+        let none = BTreeMap::new();
+        let [l, t, r, b] = preset_text_inset("chevron", &none, 120.0, 80.0).unwrap();
+        assert_eq!([l, t, r, b], [40.0, 0.0, 40.0, 0.0]);
+        // Notches that meet leave the whole frame.
+        let wide = BTreeMap::from([("adj".to_owned(), 100_000.0)]);
+        assert_eq!(
+            preset_text_inset("chevron", &wide, 120.0, 80.0),
+            Some([0.0; 4])
+        );
+        // homePlate: ir sits halfway between the point's base and the tip.
+        let [_, _, r, _] = preset_text_inset("homePlate", &none, 120.0, 80.0).unwrap();
+        assert!((r - 20.0).abs() < 1e-4, "{r}");
     }
 
     #[test]
