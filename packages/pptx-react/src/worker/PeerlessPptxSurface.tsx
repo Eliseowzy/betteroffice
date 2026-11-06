@@ -44,6 +44,7 @@ import { createPeerlessEditorApi, type PptxAsyncEditorApi } from './createPeerle
 import { usePeerlessTextSelection } from './usePeerlessTextSelection';
 import { PeerlessResizeHandles, PeerlessShapeOverlay } from './PeerlessShapeOverlay';
 import { usePeerlessShapeGestures, type PeerlessShapePreviewStore } from './usePeerlessShapeGestures';
+import { editorTheme } from '../components/editorTheme';
 
 function useStageFit(stage: RefObject<HTMLDivElement | null>, run: PeerlessPresentation | null,
   chrome: PeerlessPresentation | null,
@@ -349,12 +350,12 @@ const noProposals: Proposal[] = [];
 
 const styles: Record<string, CSSProperties> = {
   editor: { position: 'relative', display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0,
-    color: '#172033', fontFamily: 'ui-sans-serif, system-ui, sans-serif' },
+    color: editorTheme.ink, fontFamily: 'ui-sans-serif, system-ui, sans-serif' },
   toolbarShell: { display: 'flex', alignItems: 'center', flex: '0 0 auto' },
   toolbar: { flex: '1 1 auto', minWidth: 0 },
   workspace: { display: 'flex', flex: 1, minHeight: 0 },
-  stage: { position: 'relative', display: 'flex', flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', background: '#e2e8f0', touchAction: 'none' },
+  stage: { position: 'relative', display: 'flex', flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', background: editorTheme.stage, touchAction: 'none' },
   slideFrame: { position: 'relative', flex: '0 0 auto', margin: 'auto' },
   canvas: { display: 'block', touchAction: 'none' },
-  slideCanvas: { display: 'block', background: '#ffffff', boxShadow: '0 8px 32px rgba(27, 39, 61, 0.2)', touchAction: 'none' },
+  slideCanvas: { display: 'block', background: '#ffffff', boxShadow: editorTheme.slideShadow, touchAction: 'none' },
 };

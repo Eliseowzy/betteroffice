@@ -3,6 +3,7 @@ import type { Proposal, ProposalChange } from '@betteroffice/pptx';
 import type { TFunction } from '@betteroffice/pptx-i18n';
 
 import { proposalSlideLabels } from './proposalLabels';
+import { editorTheme } from './editorTheme';
 
 interface Props { change: ProposalChange; proposal?: Proposal; t: TFunction; lang?: string; textOnly?: boolean; testId?: string }
 
@@ -80,5 +81,5 @@ const styles: Record<string, CSSProperties> = {
     padding: '4px 6px',
     textDecoration: 'none',
   },
-  detail: { color: '#64748b', lineHeight: 1.5 },
+  detail: { color: editorTheme.inkMuted, lineHeight: 1.5 },
 };

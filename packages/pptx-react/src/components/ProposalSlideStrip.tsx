@@ -3,6 +3,7 @@ import { paintSlide, sizeCanvasForSlide } from '@betteroffice/pptx';
 import type { CanvasImageResolver, ProposalDiffSlide, ProposalStripEntry } from '@betteroffice/pptx';
 import { proposalImages, proposalPaintChanges } from './proposalImages';
 import { useProposalTranslation } from '../i18n/useProposalTranslation';
+import { editorTheme } from './editorTheme';
 
 interface ProposalThumbnailPreview extends ProposalDiffSlide {
   resolveImage?: CanvasImageResolver;
@@ -58,9 +59,9 @@ export function ProposalSlideStrip({ entries, selectedSlideId, load, onSelect, r
       aria-current={selectedSlideId === entry.slideId ? 'page' : undefined}
       onClick={() => onSelect(entry.slideId)}
       style={{ display: 'block', width: '100%', marginBottom: 12, padding: 4, cursor: 'pointer',
-        border: '2px solid #4338ca', borderStyle: entry.status === 'inserted' ? 'dashed' : 'solid',
+        border: `2px solid ${editorTheme.proposal}`, borderStyle: entry.status === 'inserted' ? 'dashed' : 'solid',
         borderRadius: 5, opacity: entry.status === 'deleted' ? 0.4 : 1,
-        background: selectedSlideId === entry.slideId ? '#e0e7ff' : '#fff', color: '#4338ca' }}>
+        background: selectedSlideId === entry.slideId ? editorTheme.proposalSelected : editorTheme.surface, color: editorTheme.proposal }}>
       <span>{index + 1}</span>
       <Thumbnail slideId={entry.slideId} load={load} resolveImage={resolveImage} decodeImage={decodeImage} />
       {entry.status === 'inserted' && <span aria-label={t('proposals.insertedSlide')}>+</span>}

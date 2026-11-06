@@ -4,6 +4,7 @@ import { PLUGIN_CHROME } from '../commands/pluginEvents';
 import { useTranslation } from '../i18n';
 import type { PptxPluginActivation, PptxPluginHost } from './createPptxPluginHost';
 import { PluginRenderScope } from './PluginRenderScope';
+import { editorTheme } from '../components/editorTheme';
 
 export type DockPlacement = 'left' | 'right' | 'bottom';
 
@@ -13,11 +14,11 @@ const MIN_SIZE: Record<DockPlacement, number> = { left: 160, right: 160, bottom:
 export const NARROW_EDITOR_WIDTH = 640;
 
 const colors = {
-  surface: '#ffffff',
-  border: '#e2e8f0',
-  text: '#172033',
-  muted: '#647087',
-  selected: '#e8f0fe',
+  surface: editorTheme.surface,
+  border: editorTheme.line,
+  text: editorTheme.ink,
+  muted: editorTheme.inkMuted,
+  selected: editorTheme.selected,
   primary: '#1a73e8',
 };
 

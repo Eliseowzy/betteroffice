@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { editorTheme } from './editorTheme';
 
 export const notesStyles: Record<'panel' | 'label' | 'textarea', CSSProperties> = {
   panel: {
@@ -7,13 +8,13 @@ export const notesStyles: Record<'panel' | 'label' | 'textarea', CSSProperties> 
     flexDirection: 'column',
     gap: 4,
     padding: '8px 14px 10px',
-    background: '#ffffff',
-    borderTop: '1px solid #e2e8f0',
+    background: editorTheme.surface,
+    borderTop: `1px solid ${editorTheme.line}`,
   },
   label: {
     fontSize: 11,
     fontWeight: 650,
-    color: '#647087',
+    color: editorTheme.inkMuted,
     textTransform: 'uppercase',
     letterSpacing: '0.02em',
   },
@@ -21,11 +22,12 @@ export const notesStyles: Record<'panel' | 'label' | 'textarea', CSSProperties> 
     width: '100%',
     height: 64,
     resize: 'vertical',
-    border: '1px solid #d8dee9',
+    border: `1px solid ${editorTheme.line}`,
+    background: editorTheme.surface,
     borderRadius: 6,
     padding: '6px 8px',
     font: '13px ui-sans-serif, system-ui, sans-serif',
-    color: '#172033',
+    color: editorTheme.ink,
     boxSizing: 'border-box',
     outline: 'none',
   },
@@ -38,10 +40,10 @@ export const slideActionStyles: Record<'row' | 'button', CSSProperties> = {
     height: 26,
     whiteSpace: 'nowrap',
     padding: '0 8px',
-    border: '1px solid #cbd5e1',
+    border: `1px solid ${editorTheme.control}`,
     borderRadius: 5,
-    background: '#ffffff',
-    color: '#334155',
+    background: editorTheme.surface,
+    color: editorTheme.controlInk,
     font: '12px ui-sans-serif, system-ui, sans-serif',
     cursor: 'pointer',
   },

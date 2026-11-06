@@ -9,6 +9,7 @@ import type { PeerlessConfirmedFrame, PeerlessViewSnapshot } from './peerlessVie
 import { peerlessDeleteSlide, peerlessInsertSlide, peerlessMoveSlide } from './peerlessSlideCommands';
 import { activatePeerlessSlide } from './peerlessNavigation';
 import { peerlessPainterFactories, type PeerlessPresentation } from './usePeerlessPresentation';
+import { editorTheme } from '../components/editorTheme';
 
 const SLIDE_PREVIEW_SETTLE_MS = 400;
 
@@ -208,14 +209,14 @@ function actionButton(disabled: boolean): CSSProperties {
 }
 
 const styles: Record<string, CSSProperties> = {
-  strip: { width: 184, display: 'flex', flexDirection: 'column', padding: '14px 10px', background: '#eef1f5',
-    borderRight: '1px solid #d8dee9', boxSizing: 'border-box' },
+  strip: { width: 184, display: 'flex', flexDirection: 'column', padding: '14px 10px', background: editorTheme.rail,
+    borderRight: `1px solid ${editorTheme.line}`, boxSizing: 'border-box' },
   slide: { display: 'flex', alignItems: 'flex-start', gap: 6, width: '100%', marginBottom: 12, padding: 4,
     border: '2px solid transparent', borderRadius: 5, background: 'transparent', cursor: 'pointer' },
   activeSlide: { display: 'flex', alignItems: 'flex-start', gap: 6, width: '100%', marginBottom: 12, padding: 4,
-    border: '2px solid #325ee6', borderRadius: 5, background: 'transparent', cursor: 'pointer' },
-  number: { width: 18, flex: '0 0 auto', paddingTop: 3, fontSize: 11, color: '#647087', textAlign: 'right' },
+    border: `2px solid ${editorTheme.accent}`, borderRadius: 5, background: 'transparent', cursor: 'pointer' },
+  number: { width: 18, flex: '0 0 auto', paddingTop: 3, fontSize: 11, color: editorTheme.inkMuted, textAlign: 'right' },
   preview: { display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 0, background: '#ffffff',
-    boxShadow: '0 1px 4px rgba(20, 31, 50, 0.16)' },
-  title: { padding: 8, fontSize: 9, lineHeight: 1.25, color: '#39445a', textAlign: 'center' },
+    boxShadow: editorTheme.thumbShadow },
+  title: { padding: 8, fontSize: 9, lineHeight: 1.25, color: editorTheme.inkSoft, textAlign: 'center' },
 };
