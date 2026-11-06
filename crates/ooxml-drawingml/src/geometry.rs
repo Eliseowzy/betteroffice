@@ -1118,6 +1118,13 @@ fn bent_connector(segments: usize, adjustment: Option<f64>) -> Vec<GeometryPathC
     if segments <= 2 {
         return vec![
             GeometryPathCommand::Move { x: 0.0, y: 0.0 },
+            GeometryPathCommand::Line { x: 1.0, y: 0.0 },
+            GeometryPathCommand::Line { x: 1.0, y: 1.0 },
+        ];
+    }
+    if segments == 3 {
+        return vec![
+            GeometryPathCommand::Move { x: 0.0, y: 0.0 },
             GeometryPathCommand::Line { x: bend, y: 0.0 },
             GeometryPathCommand::Line { x: bend, y: 1.0 },
             GeometryPathCommand::Line { x: 1.0, y: 1.0 },
@@ -1173,6 +1180,29 @@ fn curved_connector(segments: usize) -> Vec<GeometryPathCommand> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bent_connectors_have_orthogonal_segments() {
+        use GeometryPathCommand::{Line, Move};
+        assert_eq!(
+            preset_geometry_to_path("bentConnector2", &HashMap::new(), 1.0).unwrap(),
+            vec![
+                Move { x: 0.0, y: 0.0 },
+                Line { x: 1.0, y: 0.0 },
+                Line { x: 1.0, y: 1.0 }
+            ]
+        );
+        let adjustments = HashMap::from([("adj1".to_owned(), 0.3)]);
+        assert_eq!(
+            preset_geometry_to_path("bentConnector3", &adjustments, 1.0).unwrap(),
+            vec![
+                Move { x: 0.0, y: 0.0 },
+                Line { x: 0.3, y: 0.0 },
+                Line { x: 0.3, y: 1.0 },
+                Line { x: 1.0, y: 1.0 }
+            ]
+        );
+    }
 
     fn corner_radii(path: &[GeometryPathCommand]) -> (f64, f64) {
         let GeometryPathCommand::Move { x: rx, .. } = path[0] else {
