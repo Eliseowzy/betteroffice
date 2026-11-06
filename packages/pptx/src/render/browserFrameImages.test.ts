@@ -30,3 +30,15 @@ test('a decode limit resizes large pictures while the default cache keeps them w
     expect(calls).toEqual([{ resizeWidth: 512, resizeHeight: 256 }, null]);
   } finally { thumbnails.dispose(); slides.dispose(); }
 });
+
+test('a host decoder is used for frame images', async () => {
+  const bytes = png(20, 10);
+  const source = { width: 20, height: 10 } as unknown as CanvasImageSource;
+  const calls: Uint8Array[] = [];
+  const images = browserFrameImages({ decodeImage: async (input) => { calls.push(input); return source; } });
+  const resolve = images.resolve({ media: new Map([['picture', bytes]]) });
+  try {
+    expect(await resolve('picture')).toBe(source);
+    expect(calls).toEqual([bytes]);
+  } finally { resolve.release(); images.dispose(); }
+});

@@ -25,6 +25,7 @@ import {
   type PeerlessConfirmedFrame, type PeerlessViewSnapshot, type PeerlessViewStore,
 } from './peerlessViewStore';
 
+const noFallbackFonts: readonly PptxFontFace[] = [];
 export const peerlessSessionOpener = { open: createPptxWorkerSession };
 export const peerlessViewStoreFactory = {
   create: (...args: Parameters<typeof createPeerlessViewStore>) => createPeerlessViewStore(...args),
@@ -90,6 +91,7 @@ export function usePeerlessPresentation(
   props: PptxAsyncEditorInternalProps, canvas: RefObject<HTMLCanvasElement | null>,
 ): { presentation: PeerlessPresentation | null; pending: PeerlessPresentation | null; failure: Error | null } {
   const fonts = useStableFonts(props.fonts);
+  const fallbackFonts = useStableFonts(props.fallbackFonts ?? noFallbackFonts);
   const collaboration = props.collaboration;
   const initialUpdate = useRef(collaboration?.initialUpdate);
   const update = collaboration?.initialUpdate;
@@ -97,8 +99,8 @@ export function usePeerlessPresentation(
     initialUpdate.current.length !== update.length || !initialUpdate.current.every((byte, index) => byte === update[index]))) {
     initialUpdate.current = update;
   }
-  const fileGeneration = useMemo(() => ({}), [props.file, fonts, props.defaultFonts, props.clientId, Boolean(collaboration),
-    collaboration?.roomId, collaboration?.clientId, initialUpdate.current]);
+  const fileGeneration = useMemo(() => ({}), [props.file, fonts, fallbackFonts, props.defaultFonts, props.clientId, Boolean(collaboration),
+    collaboration?.roomId, collaboration?.clientId, initialUpdate.current, props.decodeImage]);
   const warnFonts = useFontWarning(fileGeneration);
   const latestFile = useRef(fileGeneration);
   latestFile.current = fileGeneration;
@@ -130,8 +132,8 @@ export function usePeerlessPresentation(
     let framePainter: ReturnType<typeof createCommandFramePainter> | undefined;
     let displayedPainter: ReturnType<typeof createCommandFramePainter> | undefined;
     let echoPainter: ReturnType<typeof createLocalEchoPainter> | undefined;
-    const images = createCommandFrameImages();
-    const thumbnailImages = createCommandFrameImages({ maxDimension: THUMBNAIL_IMAGE_DIMENSION, reuse: images });
+    const images = createCommandFrameImages({ decodeImage: props.decodeImage });
+    const thumbnailImages = createCommandFrameImages({ maxDimension: THUMBNAIL_IMAGE_DIMENSION, reuse: images, decodeImage: props.decodeImage });
     const paintFonts = createPptxPaintFontForwarder();
     let activeImages: ReturnType<typeof images.pin> | undefined;
     let fatal: PptxWorkerEditorFailedError | undefined;
@@ -400,7 +402,7 @@ export function usePeerlessPresentation(
 
     try {
       session = peerlessSessionOpener.open(props.file, Object.assign({
-        fonts, defaultFonts: props.defaultFonts, clientId: props.clientId, collaboration: sessionCollaboration,
+        fonts, fallbackFonts, defaultFonts: props.defaultFonts, clientId: props.clientId, collaboration: sessionCollaboration,
         readOnly: mode.current, observeChanges: observedChanges,
         activeSlideIndex: Number.isInteger(props.initialSlide) ? Math.max(0, props.initialSlide! - 1) : 0,
       }, { pptxDefaultFontInstaller: (faces: Parameters<typeof installDefaultFonts>[0], allowed?: (family: string) => boolean) =>
@@ -584,7 +586,7 @@ export function usePeerlessPresentation(
             const journal = recovery.journal.slice();
             let source: Uint8Array | undefined = await readRecoveryBase();
             if (!currentFile()) throw new PptxWorkerEditorDisposedError();
-            const recovering = peerlessSessionOpener.open(source, { fonts, defaultFonts: callbacks.current.defaultFonts,
+            const recovering = peerlessSessionOpener.open(source, { fonts, fallbackFonts, defaultFonts: callbacks.current.defaultFonts,
               ...(baseline.kind === 'update' ? { initialUpdate: baseline.update } : {}) });
             source = undefined;
             try {
@@ -638,7 +640,7 @@ export function usePeerlessPresentation(
             if (!token.scale) return;
             let preparedEcho: ReturnType<typeof createLocalEchoPainter> | undefined;
             const render = pptxWorkerRenderClients.get(owner);
-            const factory: typeof createCommandFramePainter = render?.supported && !peerlessEchoStores.has(original)
+            const factory: typeof createCommandFramePainter = render?.supported && !props.decodeImage && !peerlessEchoStores.has(original)
               ? (target, options) => createWorkerFramePainter(target, render, { ...options, mainFirstFrame: true })
               : peerlessPainterFactories.frame;
             framePainter = factory(surface, {

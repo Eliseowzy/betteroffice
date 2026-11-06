@@ -11,9 +11,9 @@ export type { CommandFrameRaster, CommandFrameLease } from './commandFrameRaster
 export { applyPrimitiveTransform } from '../../../../shared/office-session/render/pptxSlideRaster';
 export { decodeCommandDisplayList } from '@betteroffice/pptx/worker';
 
-export function createCommandFrameImages(options: { maxDimension?: number; reuse?: object } = {}) {
+export function createCommandFrameImages(options: { maxDimension?: number; reuse?: object; decodeImage?: (bytes: Uint8Array, errorMessage: string) => Promise<CanvasImageSource> } = {}) {
   return createSlideRasterImages<HTMLCanvasElement, SlideDisplayList>({
-    images: () => browserFrameImages({ maxDimension: options.maxDimension }), frameAssetIds, reuse: options.reuse });
+    images: () => browserFrameImages({ maxDimension: options.maxDimension, decodeImage: options.decodeImage }), frameAssetIds, reuse: options.reuse });
 }
 export type CommandFrameImages = ReturnType<typeof createCommandFrameImages>;
 

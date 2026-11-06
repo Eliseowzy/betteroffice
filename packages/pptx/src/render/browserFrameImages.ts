@@ -10,8 +10,8 @@ interface CachedImage {
   closed: boolean;
 }
 
-export function browserFrameImages(options: { maxDimension?: number } = {}) {
-  return createBrowserFrameImages((bytes, message) => decodeBrowserPresentationImage(bytes, message, options));
+export function browserFrameImages(options: { maxDimension?: number; decodeImage?: (bytes: Uint8Array, errorMessage: string) => Promise<CanvasImageSource> } = {}) {
+  return createBrowserFrameImages(options.decodeImage ?? ((bytes, message) => decodeBrowserPresentationImage(bytes, message, options)));
 }
 
 export function createBrowserFrameImages(decode: (bytes: Uint8Array, errorMessage: string) => Promise<CanvasImageSource>): {

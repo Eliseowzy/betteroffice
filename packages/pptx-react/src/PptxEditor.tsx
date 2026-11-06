@@ -220,6 +220,13 @@ export interface PptxDocumentChange {
 }
 
 export interface PptxAsyncPresentationProps {
+  /** Host decoder for legacy vector media. The original package bytes stay unchanged. */
+  decodeImage?: (bytes: Uint8Array, errorMessage: string) => Promise<CanvasImageSource>;
+  /**
+   * Faces the engine falls back to for characters the requested family lacks, e.g. CJK faces
+   * for Chinese text in a Latin font. They are not offered under their own family name.
+   */
+  fallbackFonts?: readonly PptxFontFace[];
   /** Receives the version after a committed edit changes the presentation. */
   onDocumentChange?: (change: PptxDocumentChange) => void;
   /** Whether Save also downloads a copy. Defaults to true without onSave, false with it. */

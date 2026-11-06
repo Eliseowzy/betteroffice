@@ -34,7 +34,7 @@ export class EditablePresentation {
     private readonly isCurrent: () => boolean = () => true, warnFonts?: () => void) {
     this.active = Number.isInteger(props.initialSlide) ? Math.max(0, props.initialSlide! - 1) : 0;
     this.owner = workerEditorSessionOpener.open(props.file!, {
-      fonts: props.fonts, clientId: props.clientId, collaboration: props.collaboration,
+      fonts: props.fonts, fallbackFonts: props.fallbackFonts, clientId: props.clientId, collaboration: props.collaboration,
       onError: (error) => { if (this.current) props.onError?.(error); },
     });
     this.off = this.owner.subscribe(() => {
