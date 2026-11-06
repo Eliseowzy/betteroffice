@@ -1,4 +1,5 @@
 import { initialPptxZoom } from '../initialPptxZoom';
+import { usePinchZoom } from './usePinchZoom';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { CSSProperties, RefObject } from 'react';
 import { indexGeometry, transformedRect } from '@betteroffice/pptx/worker';
@@ -168,6 +169,7 @@ export function PeerlessPptxSurface(props: PptxAsyncEditorInternalProps) {
   const toolbarVisible = showToolbar !== false && toolbar !== null;
   const editorToolbar = toolbar !== undefined || !props.readOnly;
   const { previewFit, current } = useStageFit(stage, pending ?? presentation, chrome, toolbar, toolbarVisible, zoom);
+  usePinchZoom(stage, zoom, () => presentation?.getVisualSnapshot()?.fit.scale ?? null, setZoom);
   const callbacks = useRef(props);
   callbacks.current = props;
   const api = useRef<PptxAsyncEditorApi | null>(null);

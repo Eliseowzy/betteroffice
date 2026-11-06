@@ -143,6 +143,29 @@ test('async adjustment proposals are admitted and accepted', async () => {
   expect(value.client.state.editState.object?.adjustments.adj).toBe(0.32);
 });
 
+test('a trackpad pinch (ctrl + wheel) on the stage zooms the slide', async () => {
+  const value = await open();
+  const stage = value.view.getByRole('application');
+  const before = value.api.commands!.getState('zoom').value;
+  // happy-dom drops `ctrlKey` from WheelEvent's init, so set it the way Chromium reports a pinch.
+  const pinch = (deltaY: number, ctrlKey: boolean) => {
+    const wheel = new WheelEvent('wheel', { deltaY, bubbles: true, cancelable: true });
+    Object.defineProperty(wheel, 'ctrlKey', { value: ctrlKey });
+    return wheel;
+  };
+  let event!: WheelEvent;
+  await act(async () => {
+    event = pinch(-40, true);
+    stage.dispatchEvent(event);
+  });
+  expect(event.defaultPrevented).toBe(true);
+  const zoomed = value.api.commands!.getState('zoom').value;
+  expect(typeof zoomed).toBe('number');
+  expect(zoomed).not.toEqual(before);
+  await act(async () => { stage.dispatchEvent(pinch(40, false)); });
+  expect(value.api.commands!.getState('zoom').value).toEqual(zoomed);
+});
+
 test('proposals={false} hides the review chrome and gates its commands', async () => {
   const value = await open({ proposals: false });
   const target = await story(value.api);
