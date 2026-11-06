@@ -41,9 +41,9 @@ function receipt(ack: PresentationCommandAck | null, env: PptxCommandEnvironment
 }
 
 export function usePeerlessCommandBinding(run: PeerlessPresentation | null, {
-  tool, setTool, openPicture, save, focus, i18n, zoom, setZoom, review, proposals, setReview, exportPng,
+  tool, setTool, openPicture, save, focus, i18n, zoom, setZoom, review, proposals, reviewProposals = true, setReview, exportPng,
 }: { tool: PptxEditorTool; setTool(tool: PptxEditorTool): void; openPicture(): void; save(): Promise<void>;
-  focus(): void; i18n?: Translations; zoom: number | 'fit'; setZoom(value: number | 'fit'): void; review: PeerlessReviewState; proposals: Proposal[]; setReview: Dispatch<SetStateAction<PeerlessReviewState>>; exportPng(): Promise<void> }) {
+  focus(): void; i18n?: Translations; zoom: number | 'fit'; setZoom(value: number | 'fit'): void; review: PeerlessReviewState; proposals: Proposal[]; reviewProposals?: boolean; setReview: Dispatch<SetStateAction<PeerlessReviewState>>; exportPng(): Promise<void> }) {
   const { t } = useTranslation();
   const controller = useMemo(() => createPptxCommandController(), [run]);
   const binding = useMemo(() => {
@@ -65,7 +65,7 @@ export function usePeerlessCommandBinding(run: PeerlessPresentation | null, {
         canUndo: view?.editState.canUndo ?? false, canRedo: view?.editState.canRedo ?? false,
         slide: slide ? { id: slide.id, layoutPartPath: slide.layoutPartPath } : null, layouts: [...new Set(run?.client.state.slides.flatMap((slide) => slide.layoutPartPath ? [slide.layoutPartPath] : []))].map((layoutPartPath, index) => ({ value: layoutPartPath, label: t('toolbar.layoutOption', { number: index + 1 }), args: { layoutPartPath } })),
         text, shape: view?.editState.object ?? null, tool, zoom,
-        fontFamilies: DEFAULT_FONT_FAMILIES, themeFonts: view?.editState.toolbar.themeFonts ?? null, fontSizes: DEFAULT_FONT_SIZES, proposals: { open: review.open, pending: proposals.map((proposal) => ({ id: proposal.id, label: proposal.note ?? proposal.agentId, stale: proposal.staleTargets.length > 0 })), canvas: { available: proposals.filter((proposal) => proposal.changes.some((change) => change.slideId === slideId || change.kind && change.kind !== 'content' || change.oldText !== change.newText || JSON.stringify(change.before) !== JSON.stringify(change.after))).map((proposal) => ({ id: proposal.id, label: proposal.note ?? proposal.agentId, stale: proposal.staleTargets.length > 0 })), selectedId: review.selectedId, diff: review.diff } },
+        fontFamilies: DEFAULT_FONT_FAMILIES, themeFonts: view?.editState.toolbar.themeFonts ?? null, fontSizes: DEFAULT_FONT_SIZES, proposals: !reviewProposals ? null : { open: review.open, pending: proposals.map((proposal) => ({ id: proposal.id, label: proposal.note ?? proposal.agentId, stale: proposal.staleTargets.length > 0 })), canvas: { available: proposals.filter((proposal) => proposal.changes.some((change) => change.slideId === slideId || change.kind && change.kind !== 'content' || change.oldText !== change.newText || JSON.stringify(change.before) !== JSON.stringify(change.after))).map((proposal) => ({ id: proposal.id, label: proposal.note ?? proposal.agentId, stale: proposal.staleTargets.length > 0 })), selectedId: review.selectedId, diff: review.diff } },
         hostDisabled: (id) => !supported.has(id), translate: t };
     };
     const value: PptxCommandBinding = {
@@ -142,7 +142,7 @@ export function usePeerlessCommandBinding(run: PeerlessPresentation | null, {
       chrome: () => ({ i18n }), focusEditor: focus,
     };
     return value;
-  }, [run, tool, setTool, openPicture, save, focus, i18n, zoom, setZoom, review, proposals, setReview, exportPng, t]);
+  }, [run, tool, setTool, openPicture, save, focus, i18n, zoom, setZoom, review, proposals, reviewProposals, setReview, exportPng, t]);
   useLayoutEffect(() => {
     controller.attach(binding);
     return () => controller.detach(binding);

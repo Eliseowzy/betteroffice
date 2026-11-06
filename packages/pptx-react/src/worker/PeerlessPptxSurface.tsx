@@ -185,7 +185,8 @@ export function PeerlessPptxSurface(props: PptxAsyncEditorInternalProps) {
   const subscribeReview = useCallback((listener: () => void) => presentation?.store.subscribeEditState(listener) ?? (() => {}), [presentation]);
   const reviewSnapshot = useCallback(() => presentation?.store.getSnapshot().editState ?? null, [presentation]);
   const reviewState = useSyncExternalStore(subscribeReview, reviewSnapshot, reviewSnapshot);
-  const proposals = reviewState?.proposals ?? noProposals;
+  const reviewProposals = props.proposals !== false;
+  const proposals = reviewProposals ? reviewState?.proposals ?? noProposals : noProposals;
   useLayoutEffect(() => {
     if (review.selectedId && !proposals.some((proposal) => proposal.id === review.selectedId)) {
       setReview((state) => ({ ...state, selectedId: null, diff: false }));
@@ -239,7 +240,7 @@ export function PeerlessPptxSurface(props: PptxAsyncEditorInternalProps) {
     }
   }, [presentation]);
   const commands = usePeerlessCommandBinding(presentation, { tool: insertion.tool, setTool: insertion.setTool,
-    openPicture, save, focus, i18n: props.i18n, zoom, setZoom, review, proposals, setReview, exportPng });
+    openPicture, save, focus, i18n: props.i18n, zoom, setZoom, review, proposals, reviewProposals, setReview, exportPng });
   const [workspace, available] = useDockArea(Boolean(props.plugins?.length));
   useCommandShortcuts({ commands: pptxCommandController(commands)!, containerRef: editor, editorInput: inputRef,
     suspended: () => review.presenting || Boolean(presentation?.store.getSnapshot().composition) });
@@ -278,7 +279,7 @@ export function PeerlessPptxSurface(props: PptxAsyncEditorInternalProps) {
   return <PptxCommandContext.Provider value={commands}><div dir="ltr" ref={editor} className={props.className} style={{ ...styles.editor, ...props.style }} data-testid="pptx-worker-editor">
     {toolbarVisible && (editorToolbar || chrome) && <div style={styles.toolbarShell}><EditorChromeContext.Provider value>
       {editorToolbar && <div style={styles.toolbar}>{toolbar ?? (chrome ? <EditorToolbar mode="commands" /> : null)}</div>}
-      {toolbar === undefined && !props.readOnly && reviewState?.proposals && <ProposalsButton count={proposals.length} />}
+      {toolbar === undefined && !props.readOnly && reviewProposals && reviewState?.proposals && <ProposalsButton count={proposals.length} />}
       {toolbar === undefined && chrome && <PresentButton />}
     </EditorChromeContext.Provider></div>}
     {!failure && (!props.file || !presentation || empty) && <div role="status" data-testid="pptx-worker-status" style={{ position: 'absolute' }}>

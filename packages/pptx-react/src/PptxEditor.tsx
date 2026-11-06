@@ -254,6 +254,12 @@ export type PptxAsyncEditorProps = Omit<PptxInThreadEditorProps,
   experimentalWorkerOpen?: boolean;
   collaboration?: PptxAsyncCollaborationOptions;
   onReady?: (api: PptxAsyncEditorApi) => void | (() => void);
+  /**
+   * Shows the agent-proposal review chrome: the proposals button, panel and canvas diff.
+   * Defaults to true. False hides it and gates the proposal commands as unavailable;
+   * the engine's proposal API is unaffected.
+   */
+  proposals?: boolean;
 };
 
 export type PptxAsyncEditorInternalProps = ResolvedFontProps<Omit<PptxAsyncEditorProps, 'file'>> & { file?: Uint8Array };

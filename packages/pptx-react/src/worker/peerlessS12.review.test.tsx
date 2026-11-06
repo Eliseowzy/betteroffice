@@ -143,6 +143,19 @@ test('async adjustment proposals are admitted and accepted', async () => {
   expect(value.client.state.editState.object?.adjustments.adj).toBe(0.32);
 });
 
+test('proposals={false} hides the review chrome and gates its commands', async () => {
+  const value = await open({ proposals: false });
+  const target = await story(value.api);
+  const review = (await value.api.handleAsync()) as unknown as ReviewAccess;
+  let id = '';
+  await act(async () => { id = (await review.propose('reviewer', 'Hidden', [{ type: 'replaceText', storyId: target.storyId, start: 0, end: 5, text: 'Hidden' }])).id; });
+  expect(id).not.toBe('');
+  expect(value.view.queryByTestId('pptx-proposals-button')).toBeNull();
+  expect(value.api.commands!.getState('proposalsPanel')).toMatchObject({ enabled: false, disabledReason: { code: 'proposals-unavailable' } });
+  await act(async () => { await value.api.commands!.execute('proposalsPanel', { open: true }); });
+  expect(value.view.queryByTestId('pptx-proposals-panel')).toBeNull();
+});
+
 test('async_review_export', async () => {
   const value = await open();
   const target = await story(value.api);
