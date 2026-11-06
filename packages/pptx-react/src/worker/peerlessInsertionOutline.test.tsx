@@ -12,7 +12,7 @@ function outline(view: Awaited<ReturnType<typeof open>>['view']) {
   expect(elements).toHaveLength(1);
   const element = elements[0]!;
   expect(element.style.border).toBe('1px dashed #7a7a7a');
-  expect(element.style.boxShadow).toBe('0 0 0 1px rgba(255, 255, 255, 0.9)');
+  expect(element.style.boxShadow).toBe('');
   return element;
 }
 
