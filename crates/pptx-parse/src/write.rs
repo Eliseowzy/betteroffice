@@ -3063,6 +3063,21 @@ fn build_paragraph(
     if write.properties_changed || fresh {
         apply_paragraph_properties(&mut paragraph, write, prefixes);
     }
+    if write.runs.iter().all(|run| run.text.is_empty()) {
+        if let Some(run) = write.runs.last() {
+            if paragraph.child("endParaRPr").is_none() {
+                paragraph.children.push(XmlNode::Element(XmlElement::new(
+                    prefixes.drawing("endParaRPr"),
+                )));
+            }
+            apply_run_properties(
+                paragraph.child_mut("endParaRPr").unwrap(),
+                &run.properties,
+                theme,
+                prefixes,
+            );
+        }
+    }
     let segments = run_segments(&write.runs);
     let mut front = 0;
     let mut back = 0;

@@ -884,7 +884,7 @@ export function registerPresentationCommandHandlers(
     if (command.kind === 'registerFont') {
       const { font, fallback } = command.payload;
       if (!font || !validText(font.family) || !font.family || !(font.bytes instanceof ArrayBuffer) ||
-        font.bytes.byteLength === 0 || font.bytes.byteLength > 32 * 1024 * 1024 ||
+        font.bytes.byteLength === 0 || font.bytes.byteLength > 64 * 1024 * 1024 ||
         font.bold !== undefined && typeof font.bold !== 'boolean' || font.italic !== undefined && typeof font.italic !== 'boolean' ||
         fallback !== undefined && typeof fallback !== 'boolean') return 'invalid-payload';
       return { kind: 'font', font, fallback: fallback ?? false };
@@ -1490,7 +1490,9 @@ export function registerPresentationCommandHandlers(
     if (start !== end || text.length > 0) {
       const joinsParagraphs = stories.get(storyKey(at))!.text.paragraphs
         .some((paragraph) => start <= paragraph.end && paragraph.end < end);
-      const grouped = !joinsParagraphs &&
+      // A soft break (Shift+Enter) is a line break inside the paragraph, not a new paragraph.
+      const softBreak = command.kind === 'insertText' && command.payload.softBreak === true;
+      const grouped = !joinsParagraphs && !softBreak &&
         (command.kind === 'insertText' || command.kind === 'deleteBackward' || command.kind === 'deleteForward');
       const time = command.payload.inputTime!;
       const group = command.payload.undoGroup!;
@@ -1502,7 +1504,7 @@ export function registerPresentationCommandHandlers(
         else opened.deleteText(at.storyId, start, end);
       }
       let offset = start;
-      const paragraphs = text.split('\n');
+      const paragraphs = softBreak ? [text] : text.split('\n');
       for (const [index, paragraph] of paragraphs.entries()) {
         if (index > 0) {
           opened.insertParagraphBreak(at.storyId, offset);

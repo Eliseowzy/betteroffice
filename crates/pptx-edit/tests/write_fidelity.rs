@@ -4095,3 +4095,21 @@ fn set_slide_layout_without_mapping_keeps_slide_xml_verbatim() {
         original["ppt/slides/slide2.xml"]
     );
 }
+
+#[test]
+fn splitting_a_paragraph_preserves_indent_spacing_tabs_and_list_level() {
+    let properties = r#"<a:pPr algn="ctr" lvl="1" marL="342900" indent="-228600"><a:spcBef><a:spcPts val="500"/></a:spcBef><a:tabLst><a:tab pos="914400" algn="l"/></a:tabLst><a:buChar char="•"/></a:pPr>"#;
+    for index in [0, 3, 6] {
+        let mut source = fixture_parts(256);
+        let slide = source.iter_mut().find(|(path,_)| path=="ppt/slides/slide2.xml").unwrap();
+        slide.1 = slide.1.replace("<a:p><a:r><a:t>Second</a:t></a:r></a:p>", &format!("<a:p>{properties}<a:r><a:rPr sz=\"4400\"/><a:t>Second</a:t></a:r></a:p>"));
+        let session=DeckSession::open(&zip(source),7).unwrap();
+        let story=session.snapshot().unwrap().slides[1].shapes[0].text_stories[0].clone();
+        session.insert_paragraph_break(&context(),&story.id,index).unwrap();
+        let saved=session.save().unwrap();
+        let xml=part_text(&parts(&saved),"ppt/slides/slide2.xml");
+        for markup in ["marL=\"342900\"","indent=\"-228600\"","lvl=\"1\"","<a:spcBef>","<a:tabLst>","<a:buChar"] {
+            assert_eq!(xml.matches(markup).count(),2,"{markup} at split {index}");
+        }
+    }
+}

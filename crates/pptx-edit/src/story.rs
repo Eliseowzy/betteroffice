@@ -988,6 +988,57 @@ impl DeckSession {
         story_id: &str,
         index: u32,
     ) -> EditResult<TextReceipt> {
+        let source_xml = self.source_paragraph_xml(story_id)?;
+        let snapshot = self.snapshot()?;
+        fn locate<'a>(
+            shapes: &'a [crate::ShapeSnapshot],
+            story: &str,
+        ) -> Option<&'a crate::ShapeSnapshot> {
+            for shape in shapes {
+                if shape
+                    .text_stories
+                    .iter()
+                    .any(|candidate| candidate.id == story)
+                {
+                    return Some(shape);
+                }
+                if let Some(found) = locate(&shape.children, story) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        let mut formatted = None;
+        for slide in &snapshot.slides {
+            if let Some(shape) = locate(&slide.shapes, story_id) {
+                formatted = Some(self.story_formatting(&slide.id, &shape.id, story_id)?);
+                break;
+            }
+        }
+        let formatted = formatted.unwrap_or(self.story(story_id)?);
+        let mut remaining = index;
+        let mut typing_style = TextStyle::default();
+        for paragraph in &formatted.paragraphs {
+            let length: u32 = paragraph
+                .runs
+                .iter()
+                .map(|run| run.text.encode_utf16().count() as u32)
+                .sum();
+            if remaining <= length {
+                for run in &paragraph.runs {
+                    typing_style = run.style.clone();
+                    let count = run.text.encode_utf16().count() as u32;
+                    if remaining <= count {
+                        break;
+                    }
+                    remaining -= count;
+                }
+                break;
+            }
+            remaining -= length + 1;
+        }
+        let empty_style = serde_json::to_string(&typing_style)
+            .map_err(|error| EditError::Json(error.to_string()))?;
         let fields = crate::target::field_paragraphs(&self.package, &self.snapshot()?, story_id);
         let (story, has_fields, inherited) = {
             let txn = self.doc.transact();
@@ -999,7 +1050,7 @@ impl DeckSession {
                     length: final_pilcrow,
                 });
             }
-            let (offset, properties, sources) = paragraph_projections(&story, &txn, story_id)
+            let (offset, properties, mut sources) = paragraph_projections(&story, &txn, story_id)
                 .into_iter()
                 .find(|(offset, _, _)| *offset >= index)
                 .unwrap();
@@ -1014,13 +1065,24 @@ impl DeckSession {
                 .find(|(position, _)| *position == offset)
                 .unwrap()
                 .1;
-            let inherited = if marker == properties {
-                None
-            } else {
-                let sources = serde_json::to_string(&sources)
-                    .map_err(|error| EditError::Json(error.to_string()))?;
-                Some((marker, properties, sources))
-            };
+            if sources.is_empty() {
+                sources.push(ParagraphSource {
+                    id: map_string(&properties, &txn, PARA_ID).unwrap_or_default(),
+                    xml: map_string(&properties, &txn, "preservedXml"),
+                });
+            }
+            for source in &mut sources {
+                if source.xml.is_none() {
+                    source.xml = source
+                        .id
+                        .strip_prefix(&format!("para:{story_id}:"))
+                        .and_then(|index| index.parse::<usize>().ok())
+                        .and_then(|index| source_xml.get(index).cloned());
+                }
+            }
+            let sources = serde_json::to_string(&sources)
+                .map_err(|error| EditError::Json(error.to_string()))?;
+            let inherited = Some((marker, properties, sources));
             (story, has_fields, inherited)
         };
         let paragraph_id = self.next_id("para");
@@ -1037,8 +1099,13 @@ impl DeckSession {
         if has_fields {
             pilcrow.insert(&mut txn, "hasFields", true);
         }
-        if let Some((marker, properties, sources)) = inherited {
-            for target in [marker, pilcrow] {
+        if let Some((marker, properties, sources)) = &inherited {
+            let targets = if marker == properties {
+                vec![pilcrow]
+            } else {
+                vec![marker.clone(), pilcrow]
+            };
+            for target in targets {
                 for key in ["alignment", "level", "bulletJson", "preservedXml"] {
                     match properties.get(&txn, key) {
                         Some(Out::Any(value)) => {
@@ -1050,7 +1117,11 @@ impl DeckSession {
                     }
                 }
                 target.insert(&mut txn, "sourceParagraphs", sources.as_str());
+                target.insert(&mut txn, "emptyStyleJson", empty_style.as_str());
             }
+        }
+        if let Some((marker, _, _)) = &inherited {
+            marker.insert(&mut txn, "emptyStyleJson", empty_style.as_str());
         }
         Ok(TextReceipt {
             story_id: story_id.to_owned(),

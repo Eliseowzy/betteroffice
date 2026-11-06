@@ -108,7 +108,8 @@ export type PresentationCommandPayloads = {
   undo: PresentationCommandInput;
   redo: PresentationCommandInput;
   activateSlide: Partial<PresentationCommandInput> & { slideId: string };
-  insertText: PresentationCommandTextInput & { text: string; style?: TextStyle };
+  /** `softBreak` inserts `text` (a `\n`) as a line break within the paragraph. */
+  insertText: PresentationCommandTextInput & { text: string; style?: TextStyle; softBreak?: boolean };
   replaceText: PresentationCommandTextInput & { text: string; style?: TextStyle };
   formatText: PresentationCommandTextInput & { patch: TextStyle; toggle?: 'bold' | 'italic' | 'underline' | 'strikethrough';
     fontSizeStep?: { direction: 'increase' | 'decrease'; sizes: readonly number[] } };

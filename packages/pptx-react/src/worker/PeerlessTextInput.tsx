@@ -40,6 +40,7 @@ export function PeerlessTextInput({ store, visual = store, viewport, onShortcut,
     if (!input) return;
     let trailingComposition: string | null = null;
     let pastedText: string | null = null;
+    let softBreak = false;
     let inputOperation: Promise<PresentationCommandAck> | undefined;
     let cancelledComposition = false;
     let composing = false;
@@ -114,7 +115,9 @@ export function PeerlessTextInput({ store, visual = store, viewport, onShortcut,
         case 'insertParagraph':
         case 'insertLineBreak':
           event.preventDefault();
-          dispatch({ kind: 'paragraphBreak', payload });
+          // A textarea reports Enter and Shift+Enter alike, so keydown remembers which it was.
+          if (softBreak) dispatch({ kind: 'insertText', payload: { ...payload, text: '\n', softBreak: true } });
+          else dispatch({ kind: 'paragraphBreak', payload });
           break;
         default:
           return;
@@ -123,6 +126,7 @@ export function PeerlessTextInput({ store, visual = store, viewport, onShortcut,
     }
 
     function keyDown(event: KeyboardEvent): void {
+      if (event.key === 'Enter') softBreak = event.shiftKey;
       if (event.defaultPrevented) return;
       const modifier = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();

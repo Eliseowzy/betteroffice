@@ -951,3 +951,57 @@ fn width_edits_preserve_authored_gradient_geometry() {
     assert_eq!(xml.matches("<a:tileRect").count(), 2);
     assert_eq!(xml.matches("rotWithShape=\"0\"").count(), 2);
 }
+
+#[test]
+fn split_keeps_formatting_at_start_middle_and_end() {
+    for position in [0, 1, 2] {
+        let session = open_fixture();
+        let (slide, shape, story) = first_story(&session.snapshot().unwrap());
+        let length = session.story(&story).unwrap().length - 1;
+        session
+            .format_text(
+                &context(),
+                &story,
+                0,
+                length,
+                &TextStylePatch {
+                    font_size_pt: Some(44.0),
+                    ..TextStylePatch::default()
+                },
+            )
+            .unwrap();
+        session
+            .set_paragraph_alignment(&context(), &story, 0, 0, Some("ctr"))
+            .unwrap();
+        let original = session.story(&story).unwrap();
+        let first_length: u32 = original.paragraphs[0]
+            .runs
+            .iter()
+            .map(|run| run.text.encode_utf16().count() as u32)
+            .sum();
+        let index = match position {
+            0 => 0,
+            1 => first_length / 2,
+            _ => first_length,
+        };
+        session
+            .insert_paragraph_break(&context(), &story, index)
+            .unwrap();
+        let formatted = session.story_formatting(&slide, &shape, &story).unwrap();
+        assert_eq!(formatted.paragraphs[0].alignment.as_deref(), Some("ctr"));
+        assert_eq!(formatted.paragraphs[1].alignment.as_deref(), Some("ctr"));
+        for paragraph in &formatted.paragraphs[..2] {
+            for run in &paragraph.runs {
+                assert_eq!(run.style.font_size_pt, Some(44.0));
+            }
+        }
+        let reopened = reopen(&session);
+        let again = reopened.story_formatting(&slide, &shape, &story).unwrap();
+        for paragraph in &again.paragraphs[..2] {
+            assert_eq!(paragraph.alignment.as_deref(), Some("ctr"));
+            for run in &paragraph.runs {
+                assert_eq!(run.style.font_size_pt, Some(44.0));
+            }
+        }
+    }
+}
