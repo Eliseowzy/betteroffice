@@ -11,8 +11,10 @@ import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'n
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Dependency order: fonts and pptx-i18n have no workspace dependencies in this set.
-const PACKAGES = ['fonts', 'pptx-i18n', 'pptx', 'pptx-react'] as const;
+// Dependency order: pptx-i18n has no workspace dependencies in this set. @betteroffice/fonts is
+// not repacked: we do not change it, and its own font-pack dependencies are only on npm, so
+// `bun pm pack` pins it to the published release.
+const PACKAGES = ['pptx-i18n', 'pptx', 'pptx-react'] as const;
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const flag = (name: string) => args.includes(name);
@@ -38,7 +40,7 @@ const names = new Map(PACKAGES.map((name) => [(JSON.parse(readFileSync(manifestP
 
 if (!flag('--skip-build')) {
   run('bun', ['run', 'build:pptx-wasm']);
-  run('bun', ['run', 'build:fonts']);
+  run('bun', ['run', 'build:fonts']); // pptx-react's type build imports it
   run('bun', ['run', 'build:pptx']);
 }
 
