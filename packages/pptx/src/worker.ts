@@ -3,10 +3,11 @@ export {
   DEFAULT_EDITOR_TEXT_STYLE, effectiveStyleFromSelection,
   selectionFormattingFromStory, storyFormattingFromStory,
 } from './textFormatting';
+export { themeFontReference, themeFontSlot } from './textFormatting';
 /** @internal */
 export type { EffectiveTextStyle, SelectionTextFormatting } from './textFormatting';
 /** @internal */
-export { presentationStoryFormatting } from './wasm/loader';
+export { presentationStoryFormatting, presentationThemeFonts } from './wasm/loader';
 /** @internal */
 export { browserFrameImages } from './render/browserFrameImages';
 export { decodeBrowserPresentationImage } from './render/browserImage';

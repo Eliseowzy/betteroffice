@@ -9,7 +9,7 @@ import {
   type PptxPendingCommand,
 } from '../../commands/createPptxCommandStore';
 import { commandShortcut, defaultArgs, isPluginCommandId } from '../../commands/descriptors';
-import { MAX_FONT_POINTS, MIN_FONT_POINTS, MAX_ZOOM, MIN_ZOOM } from '../../commands/evaluate';
+import { MAX_FONT_POINTS, MIN_FONT_POINTS, MAX_ZOOM, MIN_ZOOM, themeFontLabel } from '../../commands/evaluate';
 import { usePptxCommand, usePptxCommands, usePptxCommandState } from '../../commands/hooks';
 import type {
   PptxCommandArgs,
@@ -497,7 +497,11 @@ function FontFamilyMenu() {
       trigger={
         <>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {state.value ?? t('toolbar.mixed')}
+            {state.value == null
+              ? t('toolbar.mixed')
+              : state.theme
+                ? themeFontLabel(state.theme, state.value, t)
+                : state.value}
           </span>
           <ToolbarIcon name="chevronDown" size={18} />
         </>
@@ -505,14 +509,18 @@ function FontFamilyMenu() {
     >
       {(close) =>
         (state.options ?? []).map((option) => (
-          <ToolbarMenuItem
-            key={option.args.family}
-            label={option.label}
-            radio
-            selected={state.value === option.args.family}
-            onClick={() => runFromControl(store, 'fontFamily', option.args)}
-            close={close}
-          />
+            <ToolbarMenuItem
+              key={'theme' in option.args ? `theme:${option.args.theme}` : option.args.family}
+              label={option.label}
+              radio
+              selected={
+                'theme' in option.args
+                  ? state.theme === option.args.theme
+                  : !state.theme && state.value === option.args.family
+              }
+              onClick={() => runFromControl(store, 'fontFamily', option.args)}
+              close={close}
+            />
         ))
       }
     </ToolbarDropdownBase>

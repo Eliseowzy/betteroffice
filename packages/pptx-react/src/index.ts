@@ -80,6 +80,7 @@ export type {
   PptxCommandStatus,
   PptxCommandStore,
   PptxCommandValues,
+  PptxFontFamilyThemeState,
   PptxPluginCommandDescriptor,
   PptxPluginCommandId,
   PptxPluginCommandResult,
@@ -133,4 +134,4 @@ export type {
   PptxPluginSnapshot,
 } from './plugins/types';
 
-export type { PptxExportList, SlideLayoutSnapshot, HeaderFooterSettings, SlideHeaderFooterText, SlideDateText, SlideHeaderFooter } from '@betteroffice/pptx';
+export type { PptxExportList, SlideLayoutSnapshot, HeaderFooterSettings, SlideHeaderFooterText, SlideDateText, SlideHeaderFooter, PptxThemeFontFace, PptxThemeFonts, PptxThemeFontSlot } from '@betteroffice/pptx';

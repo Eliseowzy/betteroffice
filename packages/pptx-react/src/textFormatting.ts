@@ -1,5 +1,7 @@
+import { themeFontSlot } from './themeFonts';
 import type {
   ParagraphAlignment,
+  PptxThemeFontSlot,
   StorySnapshot,
   TextBoxPrimitive,
   TextStyleSnapshot,
@@ -14,6 +16,9 @@ export interface EffectiveTextStyle {
   fontSizePt: number;
   color: string;
   fontFamily: string;
+  /** Set on resolved runs only; selection styles leave it out. */
+  fontTheme?: PptxThemeFontSlot | null;
+  eastAsianFontTheme?: PptxThemeFontSlot | null;
 }
 
 interface StyledSpan {
@@ -40,7 +45,15 @@ export function selectionFormattingFromStory(
     fontSize: commonValue(styles, 'fontSizePt'),
     textColor: commonValue(styles, 'color'),
     fontFamily: commonValue(styles, 'fontFamily'),
+    ...themeSlots(commonValue(styles, 'fontTheme'), commonValue(styles, 'eastAsianFontTheme')),
   };
+}
+
+function themeSlots(
+  fontTheme: PptxThemeFontSlot | null | undefined,
+  eastAsianFontTheme: PptxThemeFontSlot | null | undefined
+): Pick<SelectionFormatting, 'fontTheme' | 'eastAsianFontTheme'> {
+  return { ...(fontTheme ? { fontTheme } : {}), ...(eastAsianFontTheme ? { eastAsianFontTheme } : {}) };
 }
 
 export function storyFormattingFromStory(
@@ -203,6 +216,8 @@ function resolveTextStyle(
     fontSizePt: style.fontSizePt ?? fallback.fontSizePt,
     color: style.color ?? fallback.color,
     fontFamily: style.fontFamily ?? fallback.fontFamily,
+    fontTheme: style.fontTheme ?? themeFontSlot(style.fontFamily ?? fallback.fontFamily),
+    eastAsianFontTheme: style.eastAsianFontTheme ?? null,
   };
 }
 

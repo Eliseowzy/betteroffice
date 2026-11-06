@@ -1,4 +1,4 @@
-import type { ParagraphAlignment } from '@betteroffice/pptx';
+import type { ParagraphAlignment, PptxThemeFonts, PptxThemeFontSlot } from '@betteroffice/pptx';
 import type { TFunction, TranslationKey } from '@betteroffice/pptx-i18n';
 import {
   adjustmentLimit,
@@ -17,6 +17,7 @@ import type {
   PptxCommandOption,
   PptxCommandState,
   PptxCommandValues,
+  PptxFontFamilyThemeState,
 } from './types';
 
 /** A selector choice before its own state is evaluated. */
@@ -30,8 +31,12 @@ export interface PptxTextEnvironment {
   italic: boolean | 'mixed';
   underline: boolean | 'mixed';
   strikethrough?: boolean | 'mixed';
-  /** `null` when mixed. */
+  /** The resolved family; `null` when mixed. */
   fontFamily: string | null;
+  /** The theme slot of the Latin font; `null` when literal or mixed. */
+  fontTheme?: PptxThemeFontSlot | null;
+  /** The theme slot of the inherited East Asian font; `null` when literal or mixed. */
+  eastAsianFontTheme?: PptxThemeFontSlot | null;
   /** Points; `null` when mixed. */
   fontSize: number | null;
   /** `#rrggbb`; `null` when mixed. */
@@ -86,6 +91,8 @@ export interface PptxCommandEnvironment {
   tool: PptxEditorTool;
   zoom: PptxZoom;
   fontFamilies: readonly string[];
+  /** The current slide's theme fonts; `null` or absent when unknown. */
+  themeFonts?: PptxThemeFonts | null;
   fontSizes: readonly number[];
   /** `null` when this editor cannot hold proposals. */
   proposals: {
@@ -156,6 +163,7 @@ interface Evaluation<K extends PptxCommandId> {
   active?: boolean | 'mixed';
   value?: PptxCommandValues[K];
   options?: readonly PptxCommandChoice<K>[];
+  fontTheme?: PptxFontFamilyThemeState;
 }
 
 export const MIN_FONT_POINTS = 1;
@@ -225,7 +233,9 @@ function validArgs<K extends PptxCommandId>(id: K, args: PptxCommandArgs[K] | un
   const value = args as unknown;
   switch (id) {
     case 'fontFamily':
-      return isRecord(value) && nonEmpty(value.family);
+      return isRecord(value) && ('theme' in value
+        ? value.theme === 'major' || value.theme === 'minor'
+        : nonEmpty(value.family));
     case 'fontSize':
       return (
         isRecord(value) &&
@@ -329,6 +339,11 @@ function shapeGate(env: PptxCommandEnvironment): Gate {
   return env.shape.formattable ? null : 'unsupported-selection';
 }
 
+/** `Family (Headings)` or `Family (Body)`. */
+export function themeFontLabel(slot: PptxThemeFontSlot, family: string, t: TFunction): string {
+  return t(slot === 'major' ? 'toolbar.themeFontHeadings' : 'toolbar.themeFontBody', { family });
+}
+
 function text(env: PptxCommandEnvironment): PptxTextEnvironment | null {
   return env.text && env.text !== 'unsupported' ? env.text : null;
 }
@@ -397,14 +412,32 @@ function evaluate<K extends PptxCommandId>(
         active: current?.[id as 'bold' | 'italic' | 'underline' | 'strikethrough'] ?? false,
       };
     case 'fontFamily': {
-      const families = env.fontFamilies;
+      const fontArgs = args as PptxCommandArgs['fontFamily'] | undefined;
+      const fonts = env.themeFonts ?? null;
+      const themed: PptxCommandChoice<'fontFamily'>[] = fonts
+        ? (['major', 'minor'] as const).map((theme) => ({
+            args: { theme },
+            label: themeFontLabel(theme, fonts[theme].latin, t),
+          }))
+        : [];
       return result<'fontFamily'>({
         gate: textGate(env),
         value: current ? current.fontFamily : undefined,
-        options: families.map((family) => ({ args: { family }, label: family })),
-        active: args
-          ? current?.fontFamily === (args as PptxCommandArgs['fontFamily']).family
+        options: [
+          ...themed,
+          ...env.fontFamilies.map((family) => ({ args: { family }, label: family })),
+        ],
+        active: fontArgs
+          ? 'theme' in fontArgs
+            ? (current?.fontTheme ?? null) === fontArgs.theme
+            : current?.fontFamily === fontArgs.family
           : undefined,
+        fontTheme: {
+          ...(current
+            ? { theme: current.fontTheme ?? null, eastAsianTheme: current.eastAsianFontTheme ?? null }
+            : {}),
+          themeFonts: fonts,
+        },
       });
     }
     case 'fontSize': {
@@ -639,6 +672,9 @@ export function evaluatePptxCommand<K extends PptxCommandId>(
   } = {};
   if (evaluation.active !== undefined) presentation.active = evaluation.active;
   if (evaluation.value !== undefined) presentation.value = evaluation.value;
+  if (evaluation.fontTheme !== undefined && args === undefined) {
+    Object.assign(presentation, evaluation.fontTheme);
+  }
   if (evaluation.options !== undefined && args === undefined) {
     presentation.options = evaluation.options.map((option) => ({
       ...option,

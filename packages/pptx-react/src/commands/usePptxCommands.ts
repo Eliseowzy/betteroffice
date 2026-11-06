@@ -6,10 +6,12 @@ import type {
   PresentationHandle,
   Proposal,
   SlideDisplayList,
+  PptxThemeFonts,
   TextBoxPrimitive,
   TextStylePatch,
 } from '@betteroffice/pptx';
-import { presentationStoryFormatting } from '@betteroffice/pptx/worker';
+import { presentationStoryFormatting, presentationThemeFonts } from '@betteroffice/pptx/worker';
+import { themeFontReference, themeFontSlot } from '../themeFonts';
 import type { TFunction, Translations } from '@betteroffice/pptx-i18n';
 import type { PptxEditorTool, PptxZoom, ShapeFormattingAction } from '../components/toolbarTypes';
 import { findShape } from '../interactions';
@@ -230,13 +232,19 @@ function textEnvironment(inputs: PptxCommandInputs): PptxTextEnvironment | 'unsu
     const alignment = paragraphAlignmentFromSelection(story, textBox, start, end) ?? null;
     if (selection && selection.anchor === selection.focus) {
       const style = inputs.textStyleRef.current;
+      const caret = selectionFormattingFromStory(story, start, end, inputs.baseStyle);
+      const slot = themeFontSlot(style.fontFamily) ??
+        (caret.fontFamily === style.fontFamily ? caret.fontTheme ?? null : null);
+      const fonts = slot && slide ? themeFonts(inputs, slide.id) : null;
       return {
         kind: 'caret',
         bold: style.bold,
         italic: style.italic,
         underline: style.underline !== 'none',
         strikethrough: style.strike === 'sngStrike' || style.strike === 'dblStrike',
-        fontFamily: style.fontFamily,
+        fontFamily: slot ? fonts?.[slot].latin ?? style.fontFamily : style.fontFamily,
+        fontTheme: slot,
+        eastAsianFontTheme: caret.eastAsianFontTheme ?? null,
         fontSize: style.fontSizePt,
         color: hexColor(style.color),
         alignment,
@@ -245,13 +253,18 @@ function textEnvironment(inputs: PptxCommandInputs): PptxTextEnvironment | 'unsu
     const formatting = selection
       ? selectionFormattingFromStory(story, selection.anchor, selection.focus, inputs.baseStyle)
       : storyFormattingFromStory(story, inputs.baseStyle);
+    const rawSlot = themeFontSlot(formatting.fontFamily);
     return {
       kind: selection ? 'range' : 'shape',
       bold: mixed(formatting.bold),
       italic: mixed(formatting.italic),
       underline: mixed(formatting.underline),
       strikethrough: mixed(formatting.strikethrough),
-      fontFamily: formatting.fontFamily ?? null,
+      fontFamily: rawSlot && slide
+        ? themeFonts(inputs, slide.id)?.[rawSlot].latin ?? null
+        : formatting.fontFamily ?? null,
+      fontTheme: formatting.fontTheme ?? null,
+      eastAsianFontTheme: formatting.eastAsianFontTheme ?? null,
       fontSize: formatting.fontSize ?? null,
       color: hexColor(formatting.textColor),
       alignment,
@@ -259,6 +272,25 @@ function textEnvironment(inputs: PptxCommandInputs): PptxTextEnvironment | 'unsu
   } catch {
     return 'unsupported';
   }
+}
+
+const themeFontCache = new WeakMap<PresentationHandle, Map<string, PptxThemeFonts | null>>();
+
+function themeFonts(inputs: PptxCommandInputs, slideId: string): PptxThemeFonts | null {
+  const handle = inputs.handleRef.current;
+  if (!handle) return null;
+  let slides = themeFontCache.get(handle);
+  if (!slides) themeFontCache.set(handle, (slides = new Map()));
+  if (!slides.has(slideId)) {
+    let fonts: PptxThemeFonts | null = null;
+    try {
+      fonts = presentationThemeFonts(handle, slideId);
+    } catch {
+      // A handle without theme fonts reports none.
+    }
+    slides.set(slideId, fonts);
+  }
+  return slides.get(slideId)!;
 }
 
 function shapeEnvironment(inputs: PptxCommandInputs): PptxShapeEnvironment | null {
@@ -347,6 +379,9 @@ export function usePptxCommandBinding(
         tool: current.activeToolRef.current,
         zoom: current.zoomRef.current,
         fontFamilies: DEFAULT_FONT_FAMILIES,
+        get themeFonts() {
+          return ready && slide ? themeFonts(current, slide.id) : null;
+        },
         fontSizes: DEFAULT_FONT_SIZES,
         proposals: current.proposalsAvailable
           ? {
@@ -405,7 +440,12 @@ export function usePptxCommandBinding(
         case 'strikethrough':
           return guarded(() => actions.format({ strike: text?.strikethrough === true ? 'noStrike' : 'sngStrike' }));
         case 'fontFamily':
-          return guarded(() => actions.format({ fontFamily: args.family }));
+          return guarded(() => {
+            const font = rawArgs as PptxCommandArgs['fontFamily'];
+            return actions.format({
+              fontFamily: 'theme' in font ? themeFontReference(font.theme) : font.family,
+            });
+          });
         case 'fontSize':
           return guarded(() => actions.format({ fontSizePt: args.points }));
         case 'fontSizeStep':

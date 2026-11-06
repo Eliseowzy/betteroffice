@@ -12,11 +12,11 @@ import { extendTextRange, graphemeBoundaries, textRangeAt } from '../../../../sh
 import { SessionFailure, type MethodHandlers, type MethodPolicies } from '../../../../shared/office-session/types';
 import type { PptxEditRequest, PptxEditResult, PptxStoryTarget, PptxStoryText, PptxTextField } from '../edits';
 import type { ProposalDiffSlide } from '../proposals';
-import { DEFAULT_EDITOR_TEXT_STYLE, insertionEchoRun, insertionStyle, typingStyle } from '../textFormatting';
-import type { ParagraphAlignment, PptxCaretAnchor, SlideDisplayList, ShapeRect, ShapeDraft, PresetShapeDraft, PictureDraft, ShapeReceipt, ShapeSnapshot, StorySnapshot, TextStyle, TextStyleSnapshot } from '../types';
+import { DEFAULT_EDITOR_TEXT_STYLE, insertionEchoRun, insertionStyle, themeFontSlot, typingStyle } from '../textFormatting';
+import type { ParagraphAlignment, PptxCaretAnchor, SlideDisplayList, ShapeRect, ShapeDraft, PresetShapeDraft, PictureDraft, ShapeReceipt, ShapeSnapshot, StorySnapshot, TextStyle, TextStyleSnapshot, PptxThemeFonts } from '../types';
 import { canMoveShape, canResizeShape, effectiveShapeRect, findShape, findTopLevelShape, MIN_SHAPE_SIZE_EMU } from './commandShapes';
 import {
-  decodeTiffImage, decodeFontFace, initWasm, openPresentation, presentationMetadata, presentationStoryFormatting,
+  decodeTiffImage, decodeFontFace, initWasm, openPresentation, presentationMetadata, presentationStoryFormatting, presentationThemeFonts,
   presentationDeleteTextJoiningParagraphs, type PresentationCommandReadResult,
   type PresentationHandle, type PresentationHistoryReceipt,
 } from '../wasm/loader';
@@ -176,6 +176,7 @@ export function registerPresentationCommandHandlers(
   const mutations = new Map<number, Mutation>();
   const storyMutations = new Map<string, Map<number, Mutation>>();
   const stories = new Map<string, CachedStory>();
+  const themeFonts = new Map<string, PptxThemeFonts | null>();
   const notes = new Map<string, string>();
   const slideStoryKeys = new Map<string, Set<string>>();
   const selections = new Map<number, AnchoredSelection | null>();
@@ -580,6 +581,15 @@ export function registerPresentationCommandHandlers(
     cached.text = { ...cached.text, text, paragraphs };
   }
 
+  function themeFontsOf(slideId: string): PptxThemeFonts | null {
+    if (!themeFonts.has(slideId)) {
+      let fonts: PptxThemeFonts | null = null;
+      try { fonts = presentationThemeFonts(presentation(), slideId); } catch { /* unknown slide */ }
+      themeFonts.set(slideId, fonts);
+    }
+    return themeFonts.get(slideId)!;
+  }
+
   function formattingAt(at: PresentationCommandSelection): FormattingProjection {
     const cached = stories.get(storyKey(at))!;
     const story = cached.formatting ??= presentationStoryFormatting(presentation(), at);
@@ -633,6 +643,11 @@ export function registerPresentationCommandHandlers(
         (draft ? firstStyle ?? draft : story.paragraphs[0]?.runs[0]?.style)), ...marks };
       if (formatting.fontSizePt !== null && formatting.fontSizePt !== undefined) {
         formatting.fontSizePt = normalizeFontSize(formatting.fontSizePt);
+      }
+      if (marks.fontFamily !== undefined) {
+        const slot = themeFontSlot(marks.fontFamily);
+        formatting.fontTheme = slot;
+        if (slot) formatting.fontFamily = themeFontsOf(at.slideId)?.[slot].latin ?? formatting.fontFamily;
       }
     } else if (styles.length > 0) {
       formatting = { ...styles[0]! };
@@ -701,6 +716,7 @@ export function registerPresentationCommandHandlers(
       textContext: selection ? selection.kind === 'shape' ? 'shape'
         : selection.anchor === selection.focus ? 'caret' : 'range' : null,
       storedMarks: Object.fromEntries(Object.entries(storedMarks).filter(([, value]) => value !== undefined)), formatting, alignment,
+      themeFonts: selection ? themeFontsOf(selection.slideId) : objectSelection ? themeFontsOf(objectSelection.slideId) : null,
       hyperlink: null, table: null, canEditText: selection !== null && !readOnly, echoRun } };
     return lastEditState;
   }
@@ -1916,6 +1932,7 @@ export function registerPresentationCommandHandlers(
     mutations.clear();
     storyMutations.clear();
     stories.clear();
+    themeFonts.clear();
     draftStyles.clear();
     slideStoryKeys.clear();
     objectTokens.clear();

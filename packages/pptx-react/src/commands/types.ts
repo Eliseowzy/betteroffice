@@ -1,4 +1,9 @@
-import type { ParagraphAlignment, PptxEditRefusal } from '@betteroffice/pptx';
+import type {
+  ParagraphAlignment,
+  PptxEditRefusal,
+  PptxThemeFonts,
+  PptxThemeFontSlot,
+} from '@betteroffice/pptx';
 import type { TranslationKey } from '@betteroffice/pptx-i18n';
 import type { CommandReason, CommandState } from '../../../../shared/host-contracts/commands';
 import type { PluginCommandResult } from '../../../../shared/host-contracts/plugins';
@@ -25,7 +30,8 @@ export interface PptxCommandArgs {
   italic: null;
   underline: null;
   strikethrough: null;
-  fontFamily: { family: string };
+  /** A literal family, or a theme slot written as `+mj-lt` / `+mn-lt`. */
+  fontFamily: { family: string } | { theme: PptxThemeFontSlot };
   /** Size in points, 1 to 400. */
   fontSize: { points: number };
   fontSizeStep: { direction: 'increase' | 'decrease' };
@@ -90,7 +96,7 @@ export interface PptxCommandValues {
   italic: null;
   underline: null;
   strikethrough: null;
-  /** `null` when the selection mixes families. */
+  /** The resolved family; `null` when the selection mixes families. */
   fontFamily: string | null;
   /** Points; `null` when the selection mixes sizes. */
   fontSize: number | null;
@@ -196,7 +202,20 @@ export type PptxCommandState<K extends PptxCommandId = PptxCommandId> = CommandS
 > & {
   /** Choices a selector presents, in display order. */
   options?: readonly PptxCommandOption<K>[];
-};
+} & (K extends 'fontFamily' ? PptxFontFamilyThemeState : unknown);
+
+/**
+ * Theme-font details of the `fontFamily` state, reported without arguments.
+ * @experimental
+ */
+export interface PptxFontFamilyThemeState {
+  /** The theme slot the Latin font comes from; `null` for a literal family or a mixed selection. */
+  theme?: PptxThemeFontSlot | null;
+  /** The theme slot of the inherited East Asian font; `null` when literal or mixed. */
+  eastAsianTheme?: PptxThemeFontSlot | null;
+  /** The current slide's heading and body fonts; `null` when unknown. */
+  themeFonts?: PptxThemeFonts | null;
+}
 
 /**
  * A keyboard binding; `Mod` is Cmd on macOS and Ctrl elsewhere.

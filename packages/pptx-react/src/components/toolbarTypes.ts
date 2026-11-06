@@ -1,4 +1,4 @@
-import type { ParagraphAlignment } from '@betteroffice/pptx';
+import type { ParagraphAlignment, PptxThemeFontSlot } from '@betteroffice/pptx';
 import type { TranslationKey } from '@betteroffice/pptx-i18n';
 
 export const SHAPE_PRESETS = [
@@ -27,6 +27,9 @@ export type PptxZoom = number | 'fit';
 
 export interface SelectionFormatting {
   fontFamily?: string;
+  /** The theme slot of the Latin font; `null` when literal or mixed. */
+  fontTheme?: PptxThemeFontSlot | null;
+  eastAsianFontTheme?: PptxThemeFontSlot | null;
   fontSize?: number;
   bold?: boolean;
   italic?: boolean;

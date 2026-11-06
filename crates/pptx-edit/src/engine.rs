@@ -759,9 +759,40 @@ impl Document {
 
     pub fn story_formatting_json(&self, args: &str) -> Result<String, EngineError> {
         let args: StoryFormattingArgs = parse_args(args)?;
+        let (story, themes) = self
+            .session
+            .story_formatting_with_font_themes(&args.slide_id, &args.shape_id, &args.story_id)
+            .map_err(message_error)?;
+        let mut value = serde_json::to_value(story).map_err(message_error)?;
+        let paragraphs = value
+            .get_mut("paragraphs")
+            .and_then(serde_json::Value::as_array_mut);
+        for (paragraph, themes) in paragraphs.into_iter().flatten().zip(themes) {
+            let runs = paragraph
+                .get_mut("runs")
+                .and_then(serde_json::Value::as_array_mut);
+            for (run, themes) in runs.into_iter().flatten().zip(themes) {
+                if let Some(style) = run
+                    .get_mut("style")
+                    .and_then(serde_json::Value::as_object_mut)
+                {
+                    style.insert("fontTheme".into(), serde_json::json!(themes.latin));
+                    style.insert(
+                        "eastAsianFontTheme".into(),
+                        serde_json::json!(themes.east_asian),
+                    );
+                }
+            }
+        }
+        json(value)
+    }
+
+    /// The heading and body fonts of a slide's theme.
+    pub fn theme_fonts_json(&self, args: &str) -> Result<String, EngineError> {
+        let args: SlideArgs = parse_args(args)?;
         json(
             self.session
-                .story_formatting(&args.slide_id, &args.shape_id, &args.story_id)
+                .theme_fonts(&args.slide_id)
                 .map_err(message_error)?,
         )
     }

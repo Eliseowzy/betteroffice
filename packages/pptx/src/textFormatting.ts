@@ -1,4 +1,15 @@
-import type { StorySnapshot, TextStyle, TextStyleSnapshot } from './types';
+import type { PptxThemeFontSlot, StorySnapshot, TextStyle, TextStyleSnapshot } from './types';
+
+/** The `a:latin` typeface reference that selects a theme font slot. */
+export function themeFontReference(slot: PptxThemeFontSlot): '+mj-lt' | '+mn-lt' {
+  return slot === 'major' ? '+mj-lt' : '+mn-lt';
+}
+
+/** The theme slot a `+mj-lt` / `+mn-lt` typeface refers to; `null` for a literal family. */
+export function themeFontSlot(family: string | null | undefined): PptxThemeFontSlot | null {
+  const reference = family?.toLowerCase();
+  return reference === '+mj-lt' ? 'major' : reference === '+mn-lt' ? 'minor' : null;
+}
 
 export interface EffectiveTextStyle {
   bold: boolean;
@@ -111,6 +122,8 @@ export function insertionEchoRun(
   const inserted = { ...insertionStyleFromSelection(story, anchor, focus, storedMarks), caps: null };
   const identical = (style: TextStyleSnapshot) => {
     const properties = new Set([...Object.keys(style), ...Object.keys(inserted)]);
+    properties.delete('fontTheme');
+    properties.delete('eastAsianFontTheme');
     return [...properties].every((key) => key === 'strike'
       ? (style.strike ?? 'noStrike') === (inserted.strike ?? 'noStrike')
       : (style[key as keyof TextStyleSnapshot] ?? null) === (inserted[key as keyof typeof inserted] ?? null));

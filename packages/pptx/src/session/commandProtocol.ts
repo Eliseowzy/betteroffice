@@ -5,7 +5,7 @@ import type { SessionFailure } from '../../../../shared/office-session/types';
 import type { PresentationHandle } from '../wasm/loader';
 import type { PptxPngOptions, PptxPngTarget } from '../wasm/pngOptions';
 import type { PptxEditRequest, PptxEditResult, PptxReadRequest, PptxReadResult, PptxStoryTarget } from '../edits';
-import type { DeckSnapshot, ParagraphAlignment, ShapeRect, ShapeDraft, PresetShapeDraft, ShapeReceipt, TextStyle, TextStyleSnapshot } from '../types';
+import type { DeckSnapshot, ParagraphAlignment, ShapeRect, ShapeDraft, PresetShapeDraft, ShapeReceipt, TextStyle, TextStyleSnapshot, PptxThemeFonts } from '../types';
 import type {
   PresentationSessionOpenOptions, PresentationSlideSummary, PresentationWireFrame,
 } from './methods';
@@ -209,6 +209,8 @@ export interface PresentationCommandToolbarContext {
   table: { shapeId: string; row: number; column: number } | null;
   canEditText: boolean;
   echoRun?: 'before' | 'after' | null;
+  /** The selected slide's theme fonts; `null` without a selection. */
+  themeFonts?: PptxThemeFonts | null;
 }
 
 export interface PresentationCommandEditState {

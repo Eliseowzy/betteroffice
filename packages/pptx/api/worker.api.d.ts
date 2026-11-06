@@ -767,7 +767,7 @@ import type { SessionFailure } from '../../../../shared/office-session/types';
 import type { PresentationHandle } from '../wasm/loader';
 import type { PptxPngOptions, PptxPngTarget } from '../wasm/pngOptions';
 import type { PptxEditRequest, PptxEditResult, PptxReadRequest, PptxReadResult, PptxStoryTarget } from '../edits';
-import type { DeckSnapshot, ParagraphAlignment, ShapeRect, ShapeDraft, PresetShapeDraft, ShapeReceipt, TextStyle, TextStyleSnapshot } from '../types';
+import type { DeckSnapshot, ParagraphAlignment, ShapeRect, ShapeDraft, PresetShapeDraft, ShapeReceipt, TextStyle, TextStyleSnapshot, PptxThemeFonts } from '../types';
 import type { PresentationSessionOpenOptions, PresentationSlideSummary, PresentationWireFrame } from './methods';
 export type PresentationCommandAccessMethods = Pick<PresentationHandle, 'snapshot' | 'story' | 'findText' | 'validateEdits' | 'exportStructured' | 'exportMarkdown' | 'searchText' | 'listProposals' | 'comments' | 'previewProposal' | 'layoutProposalSlide' | 'layoutProposalDiffSlide' | 'layoutProposalDiffSlideById' | 'proposalSlideStrip' | 'layoutSlide' | 'encodeStateVector' | 'encodeStateAsUpdate'>;
 export type PresentationCommandAccessMethod = keyof PresentationCommandAccessMethods;
@@ -1044,6 +1044,8 @@ export interface PresentationCommandToolbarContext {
     } | null;
     canEditText: boolean;
     echoRun?: 'before' | 'after' | null;
+    /** The selected slide's theme fonts; `null` without a selection. */
+    themeFonts?: PptxThemeFonts | null;
 }
 export interface PresentationCommandEditState {
     readOnly: boolean;
@@ -3057,7 +3059,11 @@ export declare class PptxExportError extends Error {
 }
 
 // ---- textFormatting.d.ts ----
-import type { StorySnapshot, TextStyle } from './types';
+import type { PptxThemeFontSlot, StorySnapshot, TextStyle } from './types';
+/** The `a:latin` typeface reference that selects a theme font slot. */
+export declare function themeFontReference(slot: PptxThemeFontSlot): '+mj-lt' | '+mn-lt';
+/** The theme slot a `+mj-lt` / `+mn-lt` typeface refers to; `null` for a literal family. */
+export declare function themeFontSlot(family: string | null | undefined): PptxThemeFontSlot | null;
 export interface EffectiveTextStyle {
     bold: boolean;
     italic: boolean;
@@ -3121,6 +3127,23 @@ export interface TextStyleSnapshot {
     kernPt?: number | null;
     /** `a:rPr@cap`: how the run is cased when drawn, never in the stored text. */
     caps?: 'none' | 'small' | 'all' | null;
+    /** Resolved formatting only: the theme slot `fontFamily` comes from, `null` for a literal family. */
+    fontTheme?: PptxThemeFontSlot | null;
+    /** Resolved formatting only: the theme slot of the inherited East Asian font. */
+    eastAsianFontTheme?: PptxThemeFontSlot | null;
+}
+/** A theme font slot: the heading (`major`, `+mj-lt`) or body (`minor`, `+mn-lt`) font. */
+export type PptxThemeFontSlot = 'major' | 'minor';
+/** One theme font slot's typefaces. */
+export interface PptxThemeFontFace {
+    latin: string;
+    /** `null` when the theme leaves the East Asian face empty. */
+    eastAsian: string | null;
+}
+/** The heading and body fonts of a slide's theme. */
+export interface PptxThemeFonts {
+    major: PptxThemeFontFace;
+    minor: PptxThemeFontFace;
 }
 export interface TextRunSnapshot {
     text: string;
@@ -3884,6 +3907,7 @@ export class PptxDocument {
     startUpdateObservation(): void;
     storyFormattingJson(args: string): string;
     storyJson(args: string): string;
+    themeFontsJson(args: string): string;
     undoCaptureMode(): string;
     undoJson(): string;
     /**
@@ -4081,6 +4105,7 @@ export interface InitOutput {
     readonly pptxdocument_startUpdateObservation: (a: number) => [number, number];
     readonly pptxdocument_storyFormattingJson: (a: number, b: number, c: number) => [number, number, number, number];
     readonly pptxdocument_storyJson: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly pptxdocument_themeFontsJson: (a: number, b: number, c: number) => [number, number, number, number];
     readonly pptxdocument_undoCaptureMode: (a: number) => [number, number];
     readonly pptxdocument_undoJson: (a: number) => [number, number, number, number];
     readonly pptxdocument_undoProfiledJson: (a: number) => [number, number, number, number];
@@ -4141,7 +4166,7 @@ import type { PptxExportOptions, PptxExportResult, PptxMarkdownContent, PptxMark
 import type { Proposal, ProposalAcceptance, ProposalDiffSlide, ProposalEdit, ProposalPreview, ProposalStripEntry } from '../proposals';
 import type { PptxEditRequest, PptxEditResult, PptxFindRequest, PptxFindResult, PptxReadRequest, PptxReadResult, PptxTextField, PptxValidationResult } from '../edits';
 import type { CollaborationReplica, CollaborationUpdateOrigin } from '../collaboration/types';
-import type { CommentFlavor, CommentReceipt, CommentSnapshot, DeckSnapshot, HistoryProfile, HistoryResult, HitTestResult, ParagraphAlignment, PictureDraft, PresetShapeDraft, Profiled, ProfiledLayout, PptxFontFace, PptxCaretAnchor, PptxTextMatch, PptxTextSearchOptions, ShapeAdjustReceipt, ShapeDraft, ShapeFillReceipt, ShapeReceipt, ShapeRect, ShapeStroke, ShapeStrokeReceipt, ShapeZOrderReceipt, SlideDisplayList, SlideReceipt, StorySnapshot, TextReceipt, TextParagraphDraft, TextStyle, TextStylePatch, TransformReceipt, TableReceipt } from '../types';
+import type { CommentFlavor, CommentReceipt, CommentSnapshot, DeckSnapshot, HistoryProfile, HistoryResult, HitTestResult, ParagraphAlignment, PictureDraft, PresetShapeDraft, Profiled, ProfiledLayout, PptxFontFace, PptxCaretAnchor, PptxTextMatch, PptxTextSearchOptions, ShapeAdjustReceipt, ShapeDraft, ShapeFillReceipt, ShapeReceipt, ShapeRect, ShapeStroke, ShapeStrokeReceipt, ShapeZOrderReceipt, SlideDisplayList, SlideReceipt, StorySnapshot, PptxThemeFonts, TextReceipt, TextParagraphDraft, TextStyle, TextStylePatch, TransformReceipt, TableReceipt } from '../types';
 export type WasmInitInput = InitInput | Promise<InitInput>;
 export interface InspectPresentationOptions {
     includeMedia?: boolean;
@@ -4439,6 +4464,8 @@ type PptxStoryFormattingTarget = {
     storyId: string;
 };
 export declare function presentationStoryFormatting(handle: PresentationHandle, target: PptxStoryFormattingTarget): StorySnapshot;
+/** The heading and body fonts of a slide's theme. */
+export declare function presentationThemeFonts(handle: PresentationHandle, slideId: string): PptxThemeFonts;
 export declare function presentationDeleteTextJoiningParagraphs(handle: PresentationHandle, storyId: string, start: number, end: number): TextReceipt;
 export declare function presentationMetadata(handle: PresentationHandle): PresentationMetadata;
 /** @experimental */
@@ -4489,10 +4516,11 @@ export interface PptxPngOptions {
 // ---- worker.d.ts ----
 /** @internal */
 export { DEFAULT_EDITOR_TEXT_STYLE, effectiveStyleFromSelection, selectionFormattingFromStory, storyFormattingFromStory, } from './textFormatting';
+export { themeFontReference, themeFontSlot } from './textFormatting';
 /** @internal */
 export type { EffectiveTextStyle, SelectionTextFormatting } from './textFormatting';
 /** @internal */
-export { presentationStoryFormatting } from './wasm/loader';
+export { presentationStoryFormatting, presentationThemeFonts } from './wasm/loader';
 /** @internal */
 export { browserFrameImages } from './render/browserFrameImages';
 export { decodeBrowserPresentationImage } from './render/browserImage';

@@ -107,6 +107,7 @@ export const pptxdocument_snapshotJson: (a: number) => [number, number, number, 
 export const pptxdocument_startUpdateObservation: (a: number) => [number, number];
 export const pptxdocument_storyFormattingJson: (a: number, b: number, c: number) => [number, number, number, number];
 export const pptxdocument_storyJson: (a: number, b: number, c: number) => [number, number, number, number];
+export const pptxdocument_themeFontsJson: (a: number, b: number, c: number) => [number, number, number, number];
 export const pptxdocument_undoCaptureMode: (a: number) => [number, number];
 export const pptxdocument_undoJson: (a: number) => [number, number, number, number];
 export const pptxdocument_undoProfiledJson: (a: number) => [number, number, number, number];

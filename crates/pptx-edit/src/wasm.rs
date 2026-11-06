@@ -217,6 +217,11 @@ impl PptxDocument {
         self.inner.story_formatting_json(args).map_err(to_js)
     }
 
+    #[wasm_bindgen(js_name = themeFontsJson)]
+    pub fn theme_fonts_json(&self, args: &str) -> Result<String, JsValue> {
+        self.inner.theme_fonts_json(args).map_err(to_js)
+    }
+
     /// Anchors a caret offset so that later edits, undo and remote updates move it.
     #[wasm_bindgen(js_name = anchorCaretJson)]
     pub fn anchor_caret_json(&self, args: &str) -> Result<String, JsValue> {
