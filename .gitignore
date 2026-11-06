@@ -47,3 +47,4 @@ crates/docx-edit/tests/fixtures/alternate-main-part.*.png
 /packages/fonts/src/decoder/
 
 /crates/betteroffice-fonts-*/assets/
+dist-finx/
