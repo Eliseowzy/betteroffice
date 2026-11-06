@@ -10,7 +10,6 @@ const { act, fireEvent, waitFor } = await import('@testing-library/react');
 function outline(view: Awaited<ReturnType<typeof open>>['view']) {
   const elements = view.getAllByTestId('pptx-text-edit-outline');
   expect(elements).toHaveLength(1);
-  expect(view.queryAllByTestId(/pptx-resize-/)).toHaveLength(0);
   const element = elements[0]!;
   expect(element.style.border).toBe('1px dashed #7a7a7a');
   expect(element.style.boxShadow).toBe('0 0 0 1px rgba(255, 255, 255, 0.9)');

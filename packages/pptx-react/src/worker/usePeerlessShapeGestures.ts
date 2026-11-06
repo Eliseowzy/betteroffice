@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, type KeyboardEvent, type PointerEvent, type RefObject } from 'react';
 import type { ShapeRect } from '@betteroffice/pptx';
-import type { PresentationCommandFrameTag, PresentationCommandObjectSelection } from '@betteroffice/pptx/worker';
+import type { PresentationCommandFrameTag, PresentationCommandObjectSelection, PresentationCommandSelection } from '@betteroffice/pptx/worker';
 import { MIN_SHAPE_SIZE_EMU, passedDragThreshold, RESIZE_HANDLES, resizeCommitDelta, resizedBounds,
   slidePoint, type ResizeHandle, type SlidePoint } from '../interactions';
 import { hitConfirmedGeometry, peerlessGestureActive, peerlessInputReference, setPeerlessGestureActive, type PeerlessViewStore } from './peerlessViewStore';
@@ -21,11 +21,16 @@ interface ShapeGesture {
   selected: PresentationCommandObjectSelection | null;
   dragging: boolean;
   cancelled: boolean;
+  /** Set when the drag started on a handle while editing text: the caret to put back afterwards. */
+  restore?: PresentationCommandSelection;
+  preview?: PeerlessShapePreview;
 }
 
 export interface PeerlessShapePreview {
   token: string;
   bounds: ShapeRect;
+  /** The resize started from text editing, so the overlay keeps the text-edit chrome. */
+  editing?: boolean;
 }
 
 export interface PeerlessShapePreviewStore {
@@ -52,8 +57,8 @@ function previewBounds(object: PresentationCommandObjectSelection, rect: ShapeRe
 }
 
 export function usePeerlessShapeGestures(store: PeerlessViewStore | null, {
-  canvas, presentation,
-}: { canvas: RefObject<HTMLCanvasElement | null>; presentation: PeerlessPresentation | null }) {
+  canvas, presentation, focus,
+}: { canvas: RefObject<HTMLCanvasElement | null>; presentation: PeerlessPresentation | null; focus?: () => void }) {
   const gesture = useRef<ShapeGesture | null>(null);
   const outstanding = useRef(new Set<ShapeGesture>());
   const recent = useRef<{ slideId: string; shapeId: string; x: number; y: number; time: number } | null>(null);
@@ -71,6 +76,26 @@ export function usePeerlessShapeGestures(store: PeerlessViewStore | null, {
     previewValue.current = value;
     for (const listener of previewListeners.current) listener();
   }, []);
+  const showPreview = useCallback((current: ShapeGesture, value: PeerlessShapePreview) => {
+    current.preview = value;
+    setPreview(value);
+  }, [setPreview]);
+
+  // A handle drag from text editing goes through object selection (the only path that can resize);
+  // once it settles, put the caret back so typing continues where it was.
+  const restoreText = useCallback((current: ShapeGesture, inputTime: number, work?: Promise<unknown>) => {
+    const selection = current.restore;
+    if (!store || !selection) return;
+    void Promise.all([current.object, work]).catch(() => {}).then(() => {
+      const view = store.getSnapshot();
+      if (view.selection?.kind !== 'object' || view.selection.slideId !== selection.slideId ||
+        view.selection.shapeId !== selection.shapeId) return;
+      return store.dispatch({ kind: 'setSelection', payload: { selection, inputTime, undoGroup: current.group } });
+    }).catch(() => {}).finally(() => {
+      if (current.preview && previewValue.current === current.preview) setPreview(null);
+      if (gesture.current === null) focus?.();
+    });
+  }, [store, setPreview, focus]);
 
   const cancel = useCallback(() => {
     const current = gesture.current;
@@ -80,8 +105,9 @@ export function usePeerlessShapeGestures(store: PeerlessViewStore | null, {
     for (const pending of outstanding.current) pending.cancelled = true;
     outstanding.current.clear();
     if (current) current.element.releasePointerCapture?.(current.pointerId);
-    setPreview(null);
-  }, [store, setPreview]);
+    if (current?.restore) restoreText(current, performance.now());
+    else setPreview(null);
+  }, [store, setPreview, restoreText]);
 
   useEffect(() => {
     setPreview(null);
@@ -119,8 +145,9 @@ export function usePeerlessShapeGestures(store: PeerlessViewStore | null, {
     if (gesture.current !== current || current.cancelled || !current.dragging || !current.selected ||
       store?.getSnapshot().editState.readOnly) return;
     const rect = peerlessGestureRect(current.selected, current.delta, current.handle);
-    if (rect) setPreview({ token: current.selected.token, bounds: previewBounds(current.selected, rect, Boolean(current.handle)) });
-  }, [store, setPreview]);
+    if (rect) showPreview(current, { token: current.selected.token, bounds: previewBounds(current.selected, rect, Boolean(current.handle)),
+      ...(current.restore ? { editing: true } : {}) });
+  }, [store, showPreview]);
 
   const onPointerDown = useCallback((event: PointerEvent<HTMLElement>): boolean => {
     if (!store || !presentation?.selectionEnabled || !canvas.current || event.button !== 0 || event.isPrimary === false ||
@@ -133,10 +160,14 @@ export function usePeerlessShapeGestures(store: PeerlessViewStore | null, {
     if (handle && !RESIZE_HANDLES.includes(handle)) return false;
     const selected = store.getSnapshot().selection;
     const scale = canvas.current.getBoundingClientRect().width / confirmed.displayList.width;
-    if (handle && (selected?.kind !== 'object' || !selected.canResize || store.getSnapshot().editState.readOnly)) return true;
+    // While the caret is in a text box its handles resize it too, through the same object path.
+    const editing = handle && selected && selected.kind !== 'object' && selected.slideId === confirmed.frame.slideId
+      ? selected : null;
+    if (handle && store.getSnapshot().editState.readOnly) return true;
+    if (handle && !editing && (selected?.kind !== 'object' || !selected.canResize)) return true;
     const hit = handle ? null : hitConfirmedGeometry(store, start, scale);
     if (!handle && hit?.kind !== 'shape') return false;
-    const shapeId = handle && selected?.kind === 'object' ? selected.shapeId : hit!.shapeId;
+    const shapeId = handle && selected ? selected.shapeId : hit!.shapeId;
     const previous = recent.current;
     const repeated = !handle && previous?.slideId === confirmed.frame.slideId && previous.shapeId === shapeId &&
       event.timeStamp >= previous.time && event.timeStamp - previous.time <= 600 &&
@@ -146,7 +177,7 @@ export function usePeerlessShapeGestures(store: PeerlessViewStore | null, {
     const frame = { slideId, slideRevision, coversThroughSeq, documentEpoch, incarnation };
     const group = `shape-${++nextShapeGroup}`;
     const operation = handle && selected?.kind === 'object' ? Promise.resolve(selected)
-      : store.dispatch({ kind: 'selectObject', payload: { frame, x: start.x, y: start.y, scale,
+      : store.dispatch({ kind: 'selectObject', payload: { frame, ...(editing ? { shapeId } : { x: start.x, y: start.y, scale }),
         inputTime: event.timeStamp, undoGroup: group } }).then((ack) =>
         ack.outcomes.some((outcome) => outcome.status === 'refused' || outcome.status === 'cancelled') ||
         ack.selection?.kind !== 'object' ? null : ack.selection, () => null);
@@ -154,19 +185,22 @@ export function usePeerlessShapeGestures(store: PeerlessViewStore | null, {
       start, client: { x: event.clientX, y: event.clientY }, delta: { x: 0, y: 0 },
       shapeId, dragThreshold: repeated ? 8 : 4,
       handle, object: operation, selected: handle && selected?.kind === 'object' ? selected : null,
-      dragging: false, cancelled: false };
+      dragging: false, cancelled: false, ...(editing ? { restore: { ...editing } } : {}) };
     gesture.current = current;
     setPeerlessGestureActive(store, 'shape', true);
     outstanding.current.add(current);
     void operation.then((object) => {
       current.selected = object;
+      if (current.restore && object && gesture.current === current && !current.cancelled) {
+        showPreview(current, { token: object.token, bounds: object.bounds, editing: true });
+      }
       paint(current);
     });
     event.preventDefault();
     event.currentTarget.focus();
     event.currentTarget.setPointerCapture?.(event.pointerId);
     return true;
-  }, [store, presentation, canvas, cancel, position, paint]);
+  }, [store, presentation, canvas, cancel, position, paint, showPreview]);
 
   const hoverCursor = useCallback((event: PointerEvent<HTMLElement>): string | null => {
     if (event.buttons !== 0 || (store && peerlessGestureActive(store))) return null;
@@ -201,13 +235,14 @@ export function usePeerlessShapeGestures(store: PeerlessViewStore | null, {
     recent.current = !current.handle && !dragging ? { slideId: current.frame.slideId, shapeId: current.shapeId,
       x: event.clientX, y: event.clientY, time: inputTime } : null;
     current.element.releasePointerCapture?.(current.pointerId);
-    setPreview(null);
-    if (!dragging || delta.x === 0 && delta.y === 0) {
-      outstanding.current.delete(current);
-      return true;
-    }
+    if (!current.restore) setPreview(null);
     outstanding.current.delete(current);
-    if (current.cancelled || !presentation?.current || store.getSnapshot().editState.readOnly) return true;
+    const finish = (work?: Promise<unknown>) => {
+      if (current.restore) restoreText(current, inputTime, work);
+      return true;
+    };
+    if (!dragging || delta.x === 0 && delta.y === 0) return finish();
+    if (current.cancelled || !presentation?.current || store.getSnapshot().editState.readOnly) return finish();
     const object = current.selected;
     if (!object) {
       const at = peerlessInputReference(store, true);
@@ -215,17 +250,16 @@ export function usePeerlessShapeGestures(store: PeerlessViewStore | null, {
         void store.dispatch({ kind: 'moveShape', payload: { at, frame: current.frame,
           shapeId: current.shapeId, delta, inputTime, undoGroup: current.group } }).catch(() => {});
       }
-      return true;
+      return finish();
     }
     const rect = peerlessGestureRect(object, delta, current.handle);
-    if (!rect || Object.keys(rect).every((key) => rect[key as keyof ShapeRect] === object.rect![key as keyof ShapeRect])) return true;
+    if (!rect || Object.keys(rect).every((key) => rect[key as keyof ShapeRect] === object.rect![key as keyof ShapeRect])) return finish();
     const payload = { frame: current.frame,
       target: { slideId: object.slideId, shapeId: object.shapeId, token: object.token },
       inputTime, undoGroup: current.group };
-    void store.dispatch(current.handle ? { kind: 'setShapeRect', payload: { ...payload, rect } }
-      : { kind: 'moveShape', payload: { ...payload, x: rect.x, y: rect.y } }).catch(() => {});
-    return true;
-  }, [store, presentation, position, setPreview]);
+    return finish(store.dispatch(current.handle ? { kind: 'setShapeRect', payload: { ...payload, rect } }
+      : { kind: 'moveShape', payload: { ...payload, x: rect.x, y: rect.y } }).catch(() => {}));
+  }, [store, presentation, position, setPreview, restoreText]);
 
   const onPointerCancel = useCallback((event: PointerEvent<HTMLElement>): boolean => {
     if (gesture.current?.pointerId !== event.pointerId) return false;

@@ -41,7 +41,7 @@ import {
 import { usePeerlessPresentation, type PeerlessPresentation } from './usePeerlessPresentation';
 import { createPeerlessEditorApi, type PptxAsyncEditorApi } from './createPeerlessEditorApi';
 import { usePeerlessTextSelection } from './usePeerlessTextSelection';
-import { PeerlessShapeOverlay } from './PeerlessShapeOverlay';
+import { PeerlessResizeHandles, PeerlessShapeOverlay } from './PeerlessShapeOverlay';
 import { usePeerlessShapeGestures, type PeerlessShapePreviewStore } from './usePeerlessShapeGestures';
 
 function useStageFit(stage: RefObject<HTMLDivElement | null>, run: PeerlessPresentation | null,
@@ -103,10 +103,13 @@ function Overlays({ run, commands, inputRef, preview, insertion, onError }: { ru
   const { view, fit } = snapshot;
   const confirmed = view.confirmed!;
   const selected = view.selection;
-  const rectangles = selected && selected.kind !== 'object' && selected.slideId === confirmed.frame.slideId
-    ? geometry!.hits.filter(({ primitive }) => primitive.shapeId === selected.shapeId)
-      .map(({ primitive, transforms }) => transformedRect(transforms,
-        { x: primitive.x, y: primitive.y, width: primitive.w, height: primitive.h })) : [];
+  const hits = selected && selected.kind !== 'object' && selected.slideId === confirmed.frame.slideId
+    ? geometry!.hits.filter(({ primitive }) => primitive.shapeId === selected.shapeId) : [];
+  const rectangles = hits.map(({ primitive, transforms }) => transformedRect(transforms,
+    { x: primitive.x, y: primitive.y, width: primitive.w, height: primitive.h }));
+  // Mirrors the engine's canResize for the text box being edited: rotated or flipped shapes have no handles.
+  const resizable = hits.length > 0 && hits.every(({ transforms }) => transforms.every(({ transform }) =>
+    !transform || ((transform.rotationDeg ?? 0) % 360 === 0 && !transform.flipH && !transform.flipV)));
   const x = Math.min(...rectangles.map((rect) => rect.x));
   const y = Math.min(...rectangles.map((rect) => rect.y));
   const edited = insertion ?? (rectangles.length ? { x, y,
@@ -128,6 +131,7 @@ function Overlays({ run, commands, inputRef, preview, insertion, onError }: { ru
       left: edited.x * fit.scale, top: edited.y * fit.scale,
       width: Math.max(1, edited.width * fit.scale), height: Math.max(1, edited.height * fit.scale),
     }} />}
+    {edited && !insertion && resizable && !view.editState.readOnly && <PeerlessResizeHandles bounds={edited} scale={fit.scale} />}
     <PeerlessTextInput inputRef={inputRef} store={run.store} commands={commands} visual={run.visual} viewport={{ left: 0, top: 0, scale: fit.scale }}
       onShortcut={(shortcut) => {
         if (shortcut === 'copy' || shortcut === 'cut') void peerlessClipboard(run, shortcut === 'cut').catch((error: unknown) => { if (!run.failure) onError(error instanceof Error ? error : new Error(String(error))); });
@@ -208,7 +212,7 @@ export function PeerlessPptxSurface(props: PptxAsyncEditorInternalProps) {
     pictureOrigin.current = peerlessInsertionOrigin(presentation);
     if (pictureOrigin.current) picker.current?.click();
   }, [presentation]);
-  const shapes = usePeerlessShapeGestures(presentation?.store ?? null, { canvas, presentation });
+  const shapes = usePeerlessShapeGestures(presentation?.store ?? null, { canvas, presentation, focus });
   useEffect(() => {
     if (canvas.current) canvas.current.style.cursor = insertion.tool !== 'select' ? 'crosshair' : 'default';
   }, [insertion.tool, review.diff]);

@@ -159,7 +159,10 @@ test('shape_border', async () => {
     fireEvent.pointerUp(stage, point(stop.x, line.y + line.height / 2)); });
   await waitFor(() => expect(client.state.selection).toMatchObject({ storyId: box.storyId, focus: 2 }));
   expect(client.state.selection?.kind).not.toBe('object');
-  await waitFor(() => expect(view.queryByTestId('pptx-resize-nw')).toBeNull());
+  // PowerPoint keeps the resize handles while the caret is in the box; only the border turns dashed.
+  await waitFor(() => expect(view.queryByTestId('pptx-shape-selection')).toBeNull());
+  expect(view.getByTestId('pptx-text-edit-outline').style.border).toBe('1px dashed #7a7a7a');
+  expect(view.getAllByTestId(/pptx-resize-/)).toHaveLength(8);
 });
 
 for (const kind of ['shape', 'text']) test(`empty_slide_space_clears_${kind}_selection`, async () => {
@@ -494,7 +497,8 @@ test('table frame border selects the table before a cell click inserts a paragra
   act(() => { fireEvent.pointerDown(canvas, at); fireEvent.pointerUp(stage, at); });
   await bounded(client.flush());
   expect(client.state.selection).toMatchObject({ shapeId: box.shapeId, storyId: box.storyId, focus: 2 });
-  expect(view.queryByTestId('pptx-resize-nw')).toBeNull();
+  expect(client.state.selection?.kind).not.toBe('object');
+  expect(view.queryByTestId('pptx-shape-selection')).toBeNull();
   const input = view.getByRole('textbox', { name: 'Slide text' });
   act(() => { input.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertParagraph',
     bubbles: true, cancelable: true })); });
