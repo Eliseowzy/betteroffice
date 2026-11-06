@@ -14,8 +14,9 @@ use yrs::Transact;
 
 use crate::deck::{map_string, required_map, shape_base, shape_parts, slide_ref};
 use crate::{
-    DeckSession, EditError, EditResult, ParagraphSnapshot, SHAPES, ShapeSnapshot, SlideSnapshot,
-    StorySnapshot, TextRunSnapshot, TextStyle,
+    DeckSession, EditError, EditResult, ParagraphSnapshot, RunFontThemes, SHAPES, ShapeSnapshot,
+    SlideSnapshot, StorySnapshot, TextRunSnapshot, TextStyle, ThemeFontFace, ThemeFontSlot,
+    ThemeFonts,
 };
 
 impl DeckSession {
@@ -51,6 +52,18 @@ impl DeckSession {
         shape_id: &str,
         story_id: &str,
     ) -> EditResult<StorySnapshot> {
+        Ok(self
+            .story_formatting_with_font_themes(slide_id, shape_id, story_id)?
+            .0)
+    }
+
+    /// [`Self::story_formatting`] with the theme slots of each run's fonts, by paragraph and run.
+    pub fn story_formatting_with_font_themes(
+        &self,
+        slide_id: &str,
+        shape_id: &str,
+        story_id: &str,
+    ) -> EditResult<(StorySnapshot, Vec<Vec<RunFontThemes>>)> {
         let txn = self.doc.transact();
         let slide = slide_ref(&txn, slide_id)?;
         let source_path = map_string(&slide, &txn, "sourcePartPath");
@@ -98,6 +111,7 @@ impl DeckSession {
         }
         let mut story = self.story(story_id)?;
         let story_id = story.id.clone();
+        let mut themes = Vec::with_capacity(story.paragraphs.len());
         for (index, paragraph) in story.paragraphs.iter_mut().enumerate() {
             let mut properties = cascade.properties(index, paragraph.level, None);
             let strike = paragraph_strike(&cascade, &story_id, paragraph);
@@ -126,12 +140,54 @@ impl DeckSession {
                     style: TextStyle::default(),
                 });
             }
+            let fallback = properties.default_run.as_ref();
+            themes.push(
+                paragraph
+                    .runs
+                    .iter()
+                    .map(|run| run_font_themes(&run.style, fallback))
+                    .collect(),
+            );
             for run in &mut paragraph.runs {
-                run.style =
-                    inherited_text_style(&run.style, properties.default_run.as_ref(), &theme);
+                run.style = inherited_text_style(&run.style, fallback, &theme);
             }
         }
-        Ok(story)
+        Ok((story, themes))
+    }
+
+    /// The heading and body fonts of `slide_id`'s theme.
+    pub fn theme_fonts(&self, slide_id: &str) -> EditResult<ThemeFonts> {
+        let txn = self.doc.transact();
+        let slide = slide_ref(&txn, slide_id)?;
+        let source_path = map_string(&slide, &txn, "sourcePartPath");
+        let layout_path = map_string(&slide, &txn, "layoutPartPath");
+        let theme = pptx_parse::slide_theme(
+            self.package(),
+            source_path.as_deref(),
+            layout_path.as_deref(),
+        );
+        let face = |font: &ooxml_drawingml::ThemeFont| ThemeFontFace {
+            latin: font.latin.clone(),
+            east_asian: (!font.ea.is_empty()).then(|| font.ea.clone()),
+        };
+        Ok(ThemeFonts {
+            major: face(&theme.font_scheme.major_font),
+            minor: face(&theme.font_scheme.minor_font),
+        })
+    }
+}
+
+fn run_font_themes(direct: &TextStyle, fallback: Option<&RunProperties>) -> RunFontThemes {
+    let latin = direct
+        .font_family
+        .as_deref()
+        .or_else(|| fallback.and_then(|fallback| fallback.font_family.as_deref()))
+        .unwrap_or("+mn-lt");
+    RunFontThemes {
+        latin: ThemeFontSlot::from_reference(latin, "lt"),
+        east_asian: fallback
+            .and_then(|fallback| fallback.east_asian_family.as_deref())
+            .and_then(|family| ThemeFontSlot::from_reference(family, "ea")),
     }
 }
 

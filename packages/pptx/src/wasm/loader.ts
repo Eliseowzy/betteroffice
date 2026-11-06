@@ -81,6 +81,7 @@ import type {
   SlideDisplayList,
   SlideReceipt,
   StorySnapshot,
+  PptxThemeFonts,
   TextReceipt,
   TextParagraphDraft,
   TextStyle,
@@ -469,6 +470,15 @@ export function presentationStoryFormatting(handle: PresentationHandle, target: 
   return context.jsonWasmCall(() => (context.doc as StoryFormattingDocument).storyFormattingJson(JSON.stringify({
     slideId: target.slideId, shapeId: target.shapeId, storyId: target.storyId,
   })));
+}
+
+type ThemeFontsDocument = PptxDocument & { themeFontsJson(args: string): string };
+
+/** The heading and body fonts of a slide's theme. */
+export function presentationThemeFonts(handle: PresentationHandle, slideId: string): PptxThemeFonts {
+  const context = presentationContexts.get(handle);
+  if (!context) throw new Error('Presentation theme fonts are unavailable');
+  return context.jsonWasmCall(() => (context.doc as ThemeFontsDocument).themeFontsJson(JSON.stringify({ slideId })));
 }
 
 export function presentationDeleteTextJoiningParagraphs(

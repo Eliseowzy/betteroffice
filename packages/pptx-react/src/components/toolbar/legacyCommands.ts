@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { themeFontReference } from '../../themeFonts';
 import type { TFunction } from '@betteroffice/pptx-i18n';
 import {
   createPptxCommandController,
@@ -127,8 +128,10 @@ function formatAction<K extends PptxCommandId>(
     case 'underline':
     case 'strikethrough':
       return id;
-    case 'fontFamily':
-      return { type: 'fontFamily', value: args.family };
+    case 'fontFamily': {
+      const font = rawArgs as PptxCommandArgs['fontFamily'];
+      return { type: 'fontFamily', value: 'theme' in font ? themeFontReference(font.theme) : font.family };
+    }
     case 'fontSize':
       return { type: 'fontSize', value: args.points };
     case 'fontSizeStep': {
@@ -319,7 +322,9 @@ function project(store: PptxCommandStore): ToolbarProps {
     onZoomChange: (zoom) => run('zoom', { scale: zoom }),
     activeTool: state('tool').value ?? 'select',
     onToolChange: (tool) => run('tool', { value: tool }),
-    fontFamilies: (fontFamily.options ?? []).map((option) => option.args.family),
+    fontFamilies: (fontFamily.options ?? []).flatMap((option) =>
+      'family' in option.args ? [option.args.family] : []
+    ),
     fontSizes: (fontSize.options ?? []).map((option) => option.args.points),
     disabled: !state('save').enabled,
   };

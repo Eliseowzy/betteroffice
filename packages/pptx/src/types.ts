@@ -26,6 +26,26 @@ export interface TextStyleSnapshot {
   kernPt?: number | null;
   /** `a:rPr@cap`: how the run is cased when drawn, never in the stored text. */
   caps?: 'none' | 'small' | 'all' | null;
+  /** Resolved formatting only: the theme slot `fontFamily` comes from, `null` for a literal family. */
+  fontTheme?: PptxThemeFontSlot | null;
+  /** Resolved formatting only: the theme slot of the inherited East Asian font. */
+  eastAsianFontTheme?: PptxThemeFontSlot | null;
+}
+
+/** A theme font slot: the heading (`major`, `+mj-lt`) or body (`minor`, `+mn-lt`) font. */
+export type PptxThemeFontSlot = 'major' | 'minor';
+
+/** One theme font slot's typefaces. */
+export interface PptxThemeFontFace {
+  latin: string;
+  /** `null` when the theme leaves the East Asian face empty. */
+  eastAsian: string | null;
+}
+
+/** The heading and body fonts of a slide's theme. */
+export interface PptxThemeFonts {
+  major: PptxThemeFontFace;
+  minor: PptxThemeFontFace;
 }
 
 export interface TextRunSnapshot {

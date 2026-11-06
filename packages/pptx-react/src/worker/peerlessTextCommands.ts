@@ -14,6 +14,7 @@ export function peerlessTextContext(view: PeerlessViewSnapshot): PptxTextEnviron
     underline: formatting?.underline == null ? 'mixed' : formatting.underline !== 'none',
     strikethrough: formatting == null || formatting.strike === null ? 'mixed' : formatting.strike === 'sngStrike' || formatting.strike === 'dblStrike',
     fontFamily: formatting?.fontFamily ?? null, fontSize: formatting?.fontSizePt ?? null,
+    fontTheme: formatting?.fontTheme ?? null, eastAsianFontTheme: formatting?.eastAsianFontTheme ?? null,
     color: formatting?.color ?? null, alignment,
   };
 }

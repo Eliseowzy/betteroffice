@@ -3,6 +3,7 @@ import { flushSync } from 'react-dom';
 import type { Translations } from '@betteroffice/pptx-i18n';
 import type { Proposal } from '@betteroffice/pptx';
 import type { PresentationCommandAck } from '@betteroffice/pptx/worker';
+import { themeFontReference } from '../themeFonts';
 import type { PeerlessReviewState } from '../worker/PeerlessReview';
 import { invokePeerless } from '../worker/peerlessObjectCommands';
 import { useTranslation } from '../i18n';
@@ -64,7 +65,7 @@ export function usePeerlessCommandBinding(run: PeerlessPresentation | null, {
         canUndo: view?.editState.canUndo ?? false, canRedo: view?.editState.canRedo ?? false,
         slide: slide ? { id: slide.id, layoutPartPath: slide.layoutPartPath } : null, layouts: [...new Set(run?.client.state.slides.flatMap((slide) => slide.layoutPartPath ? [slide.layoutPartPath] : []))].map((layoutPartPath, index) => ({ value: layoutPartPath, label: t('toolbar.layoutOption', { number: index + 1 }), args: { layoutPartPath } })),
         text, shape: view?.editState.object ?? null, tool, zoom,
-        fontFamilies: DEFAULT_FONT_FAMILIES, fontSizes: DEFAULT_FONT_SIZES, proposals: { open: review.open, pending: proposals.map((proposal) => ({ id: proposal.id, label: proposal.note ?? proposal.agentId, stale: proposal.staleTargets.length > 0 })), canvas: { available: proposals.filter((proposal) => proposal.changes.some((change) => change.slideId === slideId || change.kind && change.kind !== 'content' || change.oldText !== change.newText || JSON.stringify(change.before) !== JSON.stringify(change.after))).map((proposal) => ({ id: proposal.id, label: proposal.note ?? proposal.agentId, stale: proposal.staleTargets.length > 0 })), selectedId: review.selectedId, diff: review.diff } },
+        fontFamilies: DEFAULT_FONT_FAMILIES, themeFonts: view?.editState.toolbar.themeFonts ?? null, fontSizes: DEFAULT_FONT_SIZES, proposals: { open: review.open, pending: proposals.map((proposal) => ({ id: proposal.id, label: proposal.note ?? proposal.agentId, stale: proposal.staleTargets.length > 0 })), canvas: { available: proposals.filter((proposal) => proposal.changes.some((change) => change.slideId === slideId || change.kind && change.kind !== 'content' || change.oldText !== change.newText || JSON.stringify(change.before) !== JSON.stringify(change.after))).map((proposal) => ({ id: proposal.id, label: proposal.note ?? proposal.agentId, stale: proposal.staleTargets.length > 0 })), selectedId: review.selectedId, diff: review.diff } },
         hostDisabled: (id) => !supported.has(id), translate: t };
     };
     const value: PptxCommandBinding = {
@@ -121,7 +122,11 @@ export function usePeerlessCommandBinding(run: PeerlessPresentation | null, {
           case 'save': await save(); return { ok: true, status: 'executed' };
           case 'undo': case 'redo': operation = peerlessHistory(run.store, id); break;
           case 'bold': case 'italic': case 'underline': case 'strikethrough': operation = text(id); break;
-          case 'fontFamily': operation = text({ type: 'fontFamily', value: (args as PptxCommandArgs['fontFamily']).family }); break;
+          case 'fontFamily': {
+            const font = args as PptxCommandArgs['fontFamily'];
+            operation = text({ type: 'fontFamily', value: 'theme' in font ? themeFontReference(font.theme) : font.family });
+            break;
+          }
           case 'fontSize': operation = text({ type: 'fontSize', value: (args as PptxCommandArgs['fontSize']).points }); break;
           case 'fontSizeStep': operation = text({ type: 'fontSizeStep', direction: (args as PptxCommandArgs['fontSizeStep']).direction, sizes: env.fontSizes }); break;
           case 'textColor': operation = text({ type: 'textColor', value: (args as PptxCommandArgs['textColor']).color }); break;

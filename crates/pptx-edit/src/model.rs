@@ -79,6 +79,64 @@ pub struct TextRunSnapshot {
     pub style: TextStyle,
 }
 
+/// A theme font slot: the heading (`major`) or body (`minor`) font.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ThemeFontSlot {
+    Major,
+    Minor,
+}
+
+impl ThemeFontSlot {
+    /// The slot of a `+mj-lt`/`+mn-lt` style reference for `script` (`lt`, `ea` or `cs`).
+    pub fn from_reference(reference: &str, script: &str) -> Option<Self> {
+        let (slot, suffix) = reference.strip_prefix('+')?.split_once('-')?;
+        if !suffix.eq_ignore_ascii_case(script) {
+            return None;
+        }
+        if slot.eq_ignore_ascii_case("mj") {
+            Some(Self::Major)
+        } else if slot.eq_ignore_ascii_case("mn") {
+            Some(Self::Minor)
+        } else {
+            None
+        }
+    }
+
+    /// The `a:latin` (`lt`) or `a:ea` (`ea`) typeface reference of this slot.
+    pub fn reference(self, script: &str) -> String {
+        match self {
+            Self::Major => format!("+mj-{script}"),
+            Self::Minor => format!("+mn-{script}"),
+        }
+    }
+}
+
+/// Theme slots of a run's effective Latin and East Asian fonts; `None` for a literal family.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunFontThemes {
+    pub latin: Option<ThemeFontSlot>,
+    pub east_asian: Option<ThemeFontSlot>,
+}
+
+/// One theme font slot's typefaces.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemeFontFace {
+    pub latin: String,
+    /// `None` when the theme leaves the East Asian face empty.
+    pub east_asian: Option<String>,
+}
+
+/// The heading and body fonts of a slide's theme.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemeFonts {
+    pub major: ThemeFontFace,
+    pub minor: ThemeFontFace,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ParagraphSnapshot {

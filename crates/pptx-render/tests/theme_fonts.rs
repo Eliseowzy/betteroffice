@@ -153,3 +153,38 @@ fn literal_font_names_keep_the_configured_fallback() {
     assert_eq!(registered.font_family, "Liberation Serif");
     assert_eq!(registered.font_id, 2);
 }
+
+#[test]
+fn a_run_edited_to_a_theme_reference_draws_the_theme_face() {
+    let session = DeckSession::open(DECK, 292).unwrap();
+    let snapshot = session.snapshot().unwrap();
+    let shape = snapshot.slides[0]
+        .shapes
+        .iter()
+        .find(|shape| shape.source_id == 5)
+        .unwrap();
+    session
+        .format_text(
+            &pptx_edit::EditCtx::local("test"),
+            &shape.text_stories[0].id,
+            0,
+            8,
+            &pptx_edit::TextStylePatch {
+                font_family: Some("+mj-lt".into()),
+                ..pptx_edit::TextStylePatch::default()
+            },
+        )
+        .unwrap();
+    let mut renderer = SlideRenderer::new();
+    for (family, bytes) in REGISTERED {
+        renderer.register_font(family, false, false, bytes).unwrap();
+    }
+    let list = renderer
+        .layout_slide(session.package(), &session.snapshot().unwrap(), 0)
+        .unwrap()
+        .display_list;
+    let runs = &lines(&list, 5)[0].runs;
+    assert_eq!(runs[0].text, "Explicit");
+    assert_eq!(runs[0].font_family, "Liberation Serif");
+    assert_eq!(runs[1].font_family, "Arial");
+}

@@ -489,7 +489,7 @@ export { PptxExportError } from './structuredExport';
 export type { ExportCompletion, ExportDiagnostic, ExportSeverity, MarkdownAnchor, PptxAnchor, PptxAnchorScope, PptxExportComment, PptxExportDiagnostic, PptxExportDiagnosticCode, PptxExportFailure, PptxExportFailureCode, PptxExportList, PptxExportMark, PptxExportNotes, PptxExportObject, PptxExportObjectKind, PptxExportOptions, PptxExportParagraph, PptxExportRefusal, PptxExportResult, PptxExportRun, PptxExportShape, PptxExportShapeKind, PptxExportSlide, PptxExportStory, PptxExportTable, PptxExportTableCell, PptxMarkdownContent, PptxMarkdownOptions, PptxSourceProvenance, PptxStructuredContent, PptxTextSpan, } from './structuredExport';
 export type { InspectPresentationOptions, OpenPresentationOptions, SavePresentationOptions, PresentationHandle, UndoCaptureMode, WasmInitInput, } from './wasm/loader';
 export type { EditSuccess, OperationFailure, OperationRefusal, PptxEditFailure, PptxEditFailureCode, PptxEditHistory, PptxEditPreview, PptxEditReceipt, PptxEditRefusal, PptxEditRequest, PptxEditResult, PptxEditSource, PptxEditStep, PptxEditTarget, PptxFindMatch, PptxFindRequest, PptxFindResult, PptxFindScope, PptxParagraphText, PptxReadRequest, PptxReadResult, PptxShapeTarget, PptxSlideTarget, PptxStoryTarget, PptxStoryText, PptxTextField, PptxTextGuard, PptxTextRange, PptxTextTarget, PptxValidationResult, ValidationSuccess, } from './edits';
-export type { BlipEffect, CaretStop, ColorTransform, ColorValue, CommentFlavor, CommentReceipt, CommentSnapshot, DeckSnapshot, EditProfile, GeometryPathCommand, HistoryProfile, HistoryResult, HitTestResult, ImageEffect, ImageCrop, ImagePrimitive, InheritedGeometry, LayoutProfile, Paint, ParagraphAlignment, ParagraphSnapshot, PictureDraft, PlaceholderPrimitive, PositionedGlyph, PositionedTextLine, PositionedTextRun, PresetShapeDraft, Profiled, ProfiledLayout, PptxFontFace, PptxCaretAnchor, PptxTextMatch, PptxTextSearchOptions, PrimitiveTransform, ShapeAdjustReceipt, ShapeDraft, ShapeFill, ShapeFillReceipt, ShapeGradient, ShapeKind, ShapeLineEnd, ShapeOutline, ShapePrimitive, ShapeReceipt, ShapeRect, ShapeSnapshot, ShapeStroke, ShapeStrokeReceipt, ShapeZOrderReceipt, SlideDisplayList, SlidePrimitive, SlideReceipt, SlideSnapshot, SlideLayoutSnapshot, HeaderFooterSettings, SlideHeaderFooterText, SlideDateText, SlideHeaderFooter, StorySnapshot, Stroke, StrokeEnd, TextBoxPrimitive, TextReceipt, TextParagraphDraft, TextRunSnapshot, TextStyle, TextStylePatch, TextStyleSnapshot, TransformReceipt, TableReceipt, UpdateEvent, } from './types';
+export type { BlipEffect, CaretStop, ColorTransform, ColorValue, CommentFlavor, CommentReceipt, CommentSnapshot, DeckSnapshot, EditProfile, GeometryPathCommand, HistoryProfile, HistoryResult, HitTestResult, ImageEffect, ImageCrop, ImagePrimitive, InheritedGeometry, LayoutProfile, Paint, ParagraphAlignment, ParagraphSnapshot, PictureDraft, PlaceholderPrimitive, PositionedGlyph, PositionedTextLine, PositionedTextRun, PresetShapeDraft, Profiled, ProfiledLayout, PptxFontFace, PptxCaretAnchor, PptxTextMatch, PptxTextSearchOptions, PptxThemeFontFace, PptxThemeFonts, PptxThemeFontSlot, PrimitiveTransform, ShapeAdjustReceipt, ShapeDraft, ShapeFill, ShapeFillReceipt, ShapeGradient, ShapeKind, ShapeLineEnd, ShapeOutline, ShapePrimitive, ShapeReceipt, ShapeRect, ShapeSnapshot, ShapeStroke, ShapeStrokeReceipt, ShapeZOrderReceipt, SlideDisplayList, SlidePrimitive, SlideReceipt, SlideSnapshot, SlideLayoutSnapshot, HeaderFooterSettings, SlideHeaderFooterText, SlideDateText, SlideHeaderFooter, StorySnapshot, Stroke, StrokeEnd, TextBoxPrimitive, TextReceipt, TextParagraphDraft, TextRunSnapshot, TextStyle, TextStylePatch, TextStyleSnapshot, TransformReceipt, TableReceipt, UpdateEvent, } from './types';
 /** @internal */
 export { metafileImageBytes } from './render/image';
 /** @internal */
@@ -2184,6 +2184,23 @@ export interface TextStyleSnapshot {
     kernPt?: number | null;
     /** `a:rPr@cap`: how the run is cased when drawn, never in the stored text. */
     caps?: 'none' | 'small' | 'all' | null;
+    /** Resolved formatting only: the theme slot `fontFamily` comes from, `null` for a literal family. */
+    fontTheme?: PptxThemeFontSlot | null;
+    /** Resolved formatting only: the theme slot of the inherited East Asian font. */
+    eastAsianFontTheme?: PptxThemeFontSlot | null;
+}
+/** A theme font slot: the heading (`major`, `+mj-lt`) or body (`minor`, `+mn-lt`) font. */
+export type PptxThemeFontSlot = 'major' | 'minor';
+/** One theme font slot's typefaces. */
+export interface PptxThemeFontFace {
+    latin: string;
+    /** `null` when the theme leaves the East Asian face empty. */
+    eastAsian: string | null;
+}
+/** The heading and body fonts of a slide's theme. */
+export interface PptxThemeFonts {
+    major: PptxThemeFontFace;
+    minor: PptxThemeFontFace;
 }
 export interface TextRunSnapshot {
     text: string;
@@ -2947,6 +2964,7 @@ export class PptxDocument {
     startUpdateObservation(): void;
     storyFormattingJson(args: string): string;
     storyJson(args: string): string;
+    themeFontsJson(args: string): string;
     undoCaptureMode(): string;
     undoJson(): string;
     /**
@@ -3144,6 +3162,7 @@ export interface InitOutput {
     readonly pptxdocument_startUpdateObservation: (a: number) => [number, number];
     readonly pptxdocument_storyFormattingJson: (a: number, b: number, c: number) => [number, number, number, number];
     readonly pptxdocument_storyJson: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly pptxdocument_themeFontsJson: (a: number, b: number, c: number) => [number, number, number, number];
     readonly pptxdocument_undoCaptureMode: (a: number) => [number, number];
     readonly pptxdocument_undoJson: (a: number) => [number, number, number, number];
     readonly pptxdocument_undoProfiledJson: (a: number) => [number, number, number, number];
@@ -3204,7 +3223,7 @@ import type { PptxExportOptions, PptxExportResult, PptxMarkdownContent, PptxMark
 import type { Proposal, ProposalAcceptance, ProposalDiffSlide, ProposalEdit, ProposalPreview, ProposalStripEntry } from '../proposals';
 import type { PptxEditRequest, PptxEditResult, PptxFindRequest, PptxFindResult, PptxReadRequest, PptxReadResult, PptxTextField, PptxValidationResult } from '../edits';
 import type { CollaborationReplica, CollaborationUpdateOrigin } from '../collaboration/types';
-import type { CommentFlavor, CommentReceipt, CommentSnapshot, DeckSnapshot, HistoryProfile, HistoryResult, HitTestResult, ParagraphAlignment, PictureDraft, PresetShapeDraft, Profiled, ProfiledLayout, PptxFontFace, PptxCaretAnchor, PptxTextMatch, PptxTextSearchOptions, ShapeAdjustReceipt, ShapeDraft, ShapeFillReceipt, ShapeReceipt, ShapeRect, ShapeStroke, ShapeStrokeReceipt, ShapeZOrderReceipt, SlideDisplayList, SlideReceipt, StorySnapshot, TextReceipt, TextParagraphDraft, TextStyle, TextStylePatch, TransformReceipt, TableReceipt } from '../types';
+import type { CommentFlavor, CommentReceipt, CommentSnapshot, DeckSnapshot, HistoryProfile, HistoryResult, HitTestResult, ParagraphAlignment, PictureDraft, PresetShapeDraft, Profiled, ProfiledLayout, PptxFontFace, PptxCaretAnchor, PptxTextMatch, PptxTextSearchOptions, ShapeAdjustReceipt, ShapeDraft, ShapeFillReceipt, ShapeReceipt, ShapeRect, ShapeStroke, ShapeStrokeReceipt, ShapeZOrderReceipt, SlideDisplayList, SlideReceipt, StorySnapshot, PptxThemeFonts, TextReceipt, TextParagraphDraft, TextStyle, TextStylePatch, TransformReceipt, TableReceipt } from '../types';
 export type WasmInitInput = InitInput | Promise<InitInput>;
 export interface InspectPresentationOptions {
     includeMedia?: boolean;
@@ -3502,6 +3521,8 @@ type PptxStoryFormattingTarget = {
     storyId: string;
 };
 export declare function presentationStoryFormatting(handle: PresentationHandle, target: PptxStoryFormattingTarget): StorySnapshot;
+/** The heading and body fonts of a slide's theme. */
+export declare function presentationThemeFonts(handle: PresentationHandle, slideId: string): PptxThemeFonts;
 export declare function presentationDeleteTextJoiningParagraphs(handle: PresentationHandle, storyId: string, start: number, end: number): TextReceipt;
 export declare function presentationMetadata(handle: PresentationHandle): PresentationMetadata;
 /** @experimental */
