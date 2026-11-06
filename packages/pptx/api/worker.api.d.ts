@@ -510,6 +510,7 @@ export declare class ProposalPictureMediaTooLargeError extends Error {
 import type { CanvasImageResolver } from './canvas';
 export declare function browserFrameImages(options?: {
     maxDimension?: number;
+    decodeImage?: (bytes: Uint8Array, errorMessage: string) => Promise<CanvasImageSource>;
 }): {
     resolve(frame: {
         media: ReadonlyMap<string, Uint8Array>;
@@ -899,9 +900,11 @@ export type PresentationCommandPayloads = {
     activateSlide: Partial<PresentationCommandInput> & {
         slideId: string;
     };
+    /** `softBreak` inserts `text` (a `\n`) as a line break within the paragraph. */
     insertText: PresentationCommandTextInput & {
         text: string;
         style?: TextStyle;
+        softBreak?: boolean;
     };
     replaceText: PresentationCommandTextInput & {
         text: string;
@@ -1063,6 +1066,8 @@ export interface PresentationCommandEditState {
     } | null;
     canUndo: boolean;
     canRedo: boolean;
+    /** Whether the text box holding the text selection can be resized in place: a top-level, unrotated, unflipped shape. */
+    textResizable?: boolean;
     toolbar: PresentationCommandToolbarContext;
 }
 export interface PresentationCommandFrame extends PresentationWireFrame {

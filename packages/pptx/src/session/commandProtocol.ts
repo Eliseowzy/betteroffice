@@ -219,6 +219,8 @@ export interface PresentationCommandEditState {
     strokeWidth: number | null; adjustments: Record<string, number>; order: { index: number; count: number } | null } | null;
   canUndo: boolean;
   canRedo: boolean;
+  /** Whether the text box holding the text selection can be resized in place: a top-level, unrotated, unflipped shape. */
+  textResizable?: boolean;
   toolbar: PresentationCommandToolbarContext;
 }
 

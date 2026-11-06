@@ -107,9 +107,8 @@ function Overlays({ run, commands, inputRef, preview, insertion, onError }: { ru
     ? geometry!.hits.filter(({ primitive }) => primitive.shapeId === selected.shapeId) : [];
   const rectangles = hits.map(({ primitive, transforms }) => transformedRect(transforms,
     { x: primitive.x, y: primitive.y, width: primitive.w, height: primitive.h }));
-  // Mirrors the engine's canResize for the text box being edited: rotated or flipped shapes have no handles.
-  const resizable = hits.length > 0 && hits.every(({ transforms }) => transforms.every(({ transform }) =>
-    !transform || ((transform.rotationDeg ?? 0) % 360 === 0 && !transform.flipH && !transform.flipV)));
+  // The engine decides: top-level (not inside a group), unrotated and unflipped text boxes only.
+  const resizable = hits.length > 0 && view.editState.textResizable === true;
   const x = Math.min(...rectangles.map((rect) => rect.x));
   const y = Math.min(...rectangles.map((rect) => rect.y));
   const edited = insertion ?? (rectangles.length ? { x, y,

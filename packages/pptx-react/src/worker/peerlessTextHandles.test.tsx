@@ -108,3 +108,17 @@ test('clicking a handle without dragging leaves text editing as it was', async (
   await waitFor(() => expect(h.client.state.selection).toMatchObject({ shapeId: h.box.shapeId, anchor: 2, focus: 2 }));
   expect(h.client.state.selection?.kind).not.toBe('object');
 });
+
+test('a text box inside a group shows the outline without handles: the engine cannot resize group members', async () => {
+  const h = await open({}, { grouped: true });
+  await editExisting(h);
+  expect(h.client.state.editState.textResizable).toBe(false);
+  expect(h.view.getAllByTestId('pptx-text-edit-outline')).toHaveLength(1);
+  expect(h.view.queryAllByTestId(/pptx-resize-/)).toHaveLength(0);
+});
+
+test('a top-level text box reports itself resizable while editing text', async () => {
+  const h = await open();
+  await editExisting(h);
+  expect(h.client.state.editState.textResizable).toBe(true);
+});

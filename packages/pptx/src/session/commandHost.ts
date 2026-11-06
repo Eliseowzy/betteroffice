@@ -156,6 +156,7 @@ export function registerPresentationCommandHandlers(
   let objectSelection: PresentationCommandObjectSelection | null = null;
   let nextObjectToken = 0;
   const objectTokens = new Map<string, { signature: string; token: string }>();
+  const textResizable = new Map<string, boolean>();
   let pointerRange: { group: string; selection: AnchoredSelection } | undefined;
   let readOnly = false;
   let observeChanges = false;
@@ -649,6 +650,31 @@ export function registerPresentationCommandHandlers(
     return result;
   }
 
+  /**
+   * Whether a text box can be resized in place (top-level, unrotated, unflipped), cached per shape so typing and
+   * history never rebuild the deck snapshot. No command groups, ungroups, rotates or flips a shape, so the answer
+   * only changes when the document is reopened, where the cache is cleared.
+   */
+  function isTextResizable(slideId: string, shapeId: string): boolean {
+    const key = `${slideId}\u0000${shapeId}`;
+    const known = textResizable.get(key);
+    if (known !== undefined) return known;
+    // A shape added since the last index (an inserted text box): index the deck again, once.
+    indexTextResizable(presentation().snapshot());
+    return textResizable.get(key) ?? false;
+  }
+
+  /** Records every shape's answer from one deck snapshot; group members are never resizable on their own. */
+  function indexTextResizable(deck: ReturnType<PresentationHandle['snapshot']>): void {
+    const visit = (slideId: string, shapes: ShapeSnapshot[], topLevel: boolean) => {
+      for (const shape of shapes) {
+        textResizable.set(`${slideId}\u0000${shape.id}`, topLevel && canResizeShape(shape));
+        visit(slideId, shape.children, false);
+      }
+    };
+    for (const slide of deck.slides) visit(slide.id, slide.shapes, true);
+  }
+
   function editState(): PresentationCommandEditState {
     const opened = presentation();
     const { formatting, alignment } = selection ? formattingAt(selection) : { formatting: null, alignment: null };
@@ -663,12 +689,13 @@ export function registerPresentationCommandHandlers(
     }
     const slide = objectSelection ? opened.snapshot().slides.find((slide) => slide.id === objectSelection!.slideId) : null;
     const shape = slide && slide.shapes.find((shape) => shape.id === objectSelection!.shapeId);
+    const textResizable = selection && !objectSelection ? isTextResizable(selection.slideId, selection.shapeId) : false;
     const color = (value: string | null | undefined) => value && /^[#]?[0-9a-f]{6}$/i.test(value) ? `#${value.replace(/^#/, '')}` : null;
     lastEditState = { readOnly, ...(opened.isProposalsAvailable() ? { proposals: opened.listProposals() } : {}), notes: activeSlideId ? { slideId: activeSlideId, text: notes.get(activeSlideId) ?? '' } : null,
       object: shape && slide ? { formattable: shape.kind === 'shape', geometry: shape.geometry ?? null,
         fill: shape.fill?.type === 'none' ? null : color(shape.resolvedFillColor), stroke: color(shape.resolvedOutlineColor),
         strokeWidth: shape.resolvedOutlineColor ? (shape.outline?.width ?? 12700) / 12700 : null,
-        adjustments: shape.adjustValues, order: { index: slide.shapes.findIndex((value) => value.id === shape.id), count: slide.shapes.length } } : null, canUndo: opened.canUndo(), canRedo: opened.canRedo(),
+        adjustments: shape.adjustValues, order: { index: slide.shapes.findIndex((value) => value.id === shape.id), count: slide.shapes.length } } : null, canUndo: opened.canUndo(), canRedo: opened.canRedo(), textResizable,
       toolbar: { target: selection ? { slideId: selection.slideId, shapeId: selection.shapeId,
         storyId: selection.storyId } : null,
       textContext: selection ? selection.kind === 'shape' ? 'shape'
@@ -1703,6 +1730,7 @@ export function registerPresentationCommandHandlers(
         if (!content.ok) throw new SessionFailure('message',
           `Presentation command open refused: ${content.failure.message}`, content.failure.code);
         cacheStories(content);
+        indexTextResizable(handle.snapshot());
         for (const slide of openedMetadata.slides) revisions.set(slide.id, 0);
         const loading = !requestedFonts || activeSlideId === null ? [] : requestDefaultFonts(activeSlideId);
         const fonts = loading instanceof Promise ? await loading : undefined;
@@ -1891,6 +1919,7 @@ export function registerPresentationCommandHandlers(
     draftStyles.clear();
     slideStoryKeys.clear();
     objectTokens.clear();
+    textResizable.clear();
     selections.clear();
     revisions.clear();
     sentMedia.clear();

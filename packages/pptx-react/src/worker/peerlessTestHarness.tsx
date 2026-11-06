@@ -48,7 +48,7 @@ function bounded<T>(promise: Promise<T>): Promise<T> {
   })]).finally(() => clearTimeout(timer));
 }
 
-export async function deck(small = false): Promise<Uint8Array> {
+export async function deck(small = false, grouped = false): Promise<Uint8Array> {
   const zip = new JSZip();
   const rel = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
   const ns = `xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="${rel}"`;
@@ -60,6 +60,11 @@ export async function deck(small = false): Promise<Uint8Array> {
   if (small) {
     const slide = await zip.file('ppt/slides/slide1.xml')!.async('string');
     zip.file('ppt/slides/slide1.xml', slide.replace('cx="6000000" cy="2400000"', 'cx="40000" cy="40000"'));
+  }
+  if (grouped) {
+    const slide = await zip.file('ppt/slides/slide1.xml')!.async('string');
+    const group = '<p:grpSp><p:nvGrpSpPr><p:cNvPr id="3" name="Group"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="100000" y="100000"/><a:ext cx="6000000" cy="2400000"/><a:chOff x="100000" y="100000"/><a:chExt cx="6000000" cy="2400000"/></a:xfrm></p:grpSpPr>';
+    zip.file('ppt/slides/slide1.xml', slide.replace('<p:sp>', group + '<p:sp>').replace('</p:sp></p:spTree>', '</p:sp></p:grpSp></p:spTree>'));
   }
   zip.file('ppt/slides/slide2.xml', await zip.file('ppt/slides/slide1.xml')!.async('string'));
   zip.file('[Content_Types].xml', (await zip.file('[Content_Types].xml')!.async('string')).replace('</Types>',
@@ -184,10 +189,10 @@ afterAll(async () => {
   await GlobalRegistrator.unregister();
 });
 
-export async function open(options: Partial<PptxAsyncEditorProps> = {}) {
+export async function open(options: Partial<PptxAsyncEditorProps> = {}, { grouped = false }: { grouped?: boolean } = {}) {
   let api!: PptxAsyncEditorApi;
   const ready = mock((value: PptxAsyncEditorApi) => { api = value; });
-  const bytes = await bounded(deck());
+  const bytes = await bounded(deck(false, grouped));
   const font = await readFile(new URL('../../../../crates/ooxml-text/tests/fonts/LiberationSans-Regular.ttf', import.meta.url));
   const fonts = [{ family: 'Liberation Sans', bytes: new Uint8Array(font) }];
   const ui = (readOnly = options.readOnly, suspend = false) => <Suspense fallback={<div>Waiting</div>}>
