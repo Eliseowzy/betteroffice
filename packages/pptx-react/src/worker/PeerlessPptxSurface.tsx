@@ -123,8 +123,8 @@ function Overlays({ run, commands, inputRef, preview, insertion, onError }: { ru
     {!insertion && view.selection?.kind === 'object' && <PeerlessShapeOverlay selection={view.selection} preview={preview}
       scale={fit.scale} readOnly={view.editState.readOnly} />}
     {edited && <span data-testid="pptx-text-edit-outline" aria-hidden="true" style={{
-      position: 'absolute', zIndex: 3, pointerEvents: 'none', border: '2px dashed #6b7280',
-      boxSizing: 'border-box', boxShadow: '0 0 0 1px rgba(255, 255, 255, 0.9)',
+      position: 'absolute', zIndex: 3, pointerEvents: 'none', border: '1px dashed #7a7a7a',
+      boxSizing: 'border-box',
       left: edited.x * fit.scale, top: edited.y * fit.scale,
       width: Math.max(1, edited.width * fit.scale), height: Math.max(1, edited.height * fit.scale),
     }} />}
