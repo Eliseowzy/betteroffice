@@ -64,7 +64,7 @@ const SCRIPT_SIZE_RATIO: f32 = 0.58;
 const BACKGROUND_FILL_BASE: u32 = 1_001;
 /// Measured on PowerPoint 16.113 exports: 1.2 em for every face.
 const SINGLE_LINE_PITCH_EM: f32 = 1.2;
-const MAX_FONT_BYTES: usize = 32 * 1024 * 1024;
+const MAX_FONT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_FONTS: usize = 256;
 const MAX_FONT_REGISTRATIONS: usize = 4_096;
 const BROWSER_FONT_ID: u32 = u32::MAX;
@@ -4780,7 +4780,7 @@ fn resolve_style(
         .map(str::to_owned)
         .or_else(|| {
             fallback.and_then(|value| {
-                resolve_color_value_to_hex_with_theme(value.color.as_ref(), Some(theme))
+                resolve_paint_color(value.color.as_ref(), theme)
             })
         })
         .unwrap_or_else(|| "#000000".to_owned());
@@ -7009,7 +7009,7 @@ fn style_from_properties(properties: &RunProperties, theme: &Theme) -> TextStyle
         bold: properties.bold,
         italic: properties.italic,
         font_size_pt: properties.font_size_pt,
-        color: resolve_color_value_to_hex_with_theme(properties.color.as_ref(), Some(theme))
+        color: resolve_paint_color(properties.color.as_ref(), theme)
             .or_else(|| linked.then(|| format!("#{}", get_theme_color(Some(theme), "hlink")))),
         font_family: properties.font_family.clone(),
         underline: properties
@@ -7850,7 +7850,7 @@ fn normalize_family(value: &str) -> String {
 
 fn valid_color(value: &str) -> bool {
     let value = value.strip_prefix('#').unwrap_or(value);
-    value.len() == 6 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+    matches!(value.len(), 6 | 8) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn points_to_px(value: f32) -> f32 {
@@ -10005,6 +10005,23 @@ mod tests {
             stroke(&outline(None), &theme).map(|stroke| stroke.color),
             Some("#112233".to_owned())
         );
+    }
+
+    #[test]
+    fn text_color_preserves_transparency() {
+        let theme = Theme::default();
+        let properties = RunProperties {
+            color: Some(ColorValue {
+                rgb: Some("112233".to_owned()),
+                alpha: Some(0.5),
+                ..ColorValue::default()
+            }),
+            ..RunProperties::default()
+        };
+        let style = style_from_properties(&properties, &theme);
+        assert_eq!(style.color.as_deref(), Some("#11223380"));
+        assert!(valid_color(style.color.as_deref().unwrap()));
+        assert!(!valid_color("#1122338Z"));
     }
 
     #[test]
