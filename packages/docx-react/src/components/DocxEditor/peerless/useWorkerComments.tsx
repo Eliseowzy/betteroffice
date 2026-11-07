@@ -55,6 +55,7 @@ export function WorkerCommentButton({ top, left, onAdd }: { top: number; left: n
   const { t } = useTranslation();
   return <Tooltip content={t('editor.addComment')} side="bottom" delayMs={300}>
     <button type="button" aria-label={t('editor.addComment')} onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); onAdd(); }}
+      className="docx-comment-button" data-docx-comment-button=""
       style={{ position: 'absolute', top, left, transform: 'translate(-50%, -50%)', zIndex: 50, width: 28, height: 28, borderRadius: 6,
         border: '1px solid var(--doc-focus-ring)', backgroundColor: 'var(--doc-surface)', color: 'var(--doc-primary)', cursor: 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px var(--doc-shadow)' }}>

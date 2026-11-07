@@ -122,6 +122,17 @@ Set `allowHostProposals` to permit proposals in read-only or viewing mode. Set
 `showHostProposalsInSidebar` as well to display proposal cards. Both are off by default;
 proposal access does not enable typing, edit batches, commands, or plugin writes.
 
+## Comment chrome placement
+
+`commentSidebarOverflow="inset"` keeps a comments sidebar that does not fit beside the page inside
+the container's right edge, next to where the selection ended. `placeCommentButton(context)` returns
+the floating "Add comment" button's center in client pixels from `context.selectionEnd`,
+`context.container` and `context.defaultCenter`. Both are off by default. The button carries
+`data-docx-comment-button` and the sidebar `data-docx-comment-sidebar`.
+
+`onCommandExecuted({ id, args, result })` fires after a command run from the editor's own chrome,
+such as a highlight colour picked in the toolbar; `ref.commands` calls do not fire it.
+
 ## Toolbar and plugins
 
 Use the composition API to arrange built-in controls or supply external chrome;

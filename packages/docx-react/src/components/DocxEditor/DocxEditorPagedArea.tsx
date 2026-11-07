@@ -150,6 +150,8 @@ export function DocxEditorPagedArea({
   setAddCommentYPosition,
   setIsAddingComment,
   setFloatingCommentBtn,
+  commentSidebarOverflow,
+  selectionEndX,
   isSuggesting = false,
   author = 'User',
   measurementFontProvider,
@@ -263,6 +265,8 @@ export function DocxEditorPagedArea({
   >;
   setAddCommentYPosition: React.Dispatch<React.SetStateAction<number | null>>;
   setIsAddingComment: React.Dispatch<React.SetStateAction<boolean>>;
+  commentSidebarOverflow?: 'clip' | 'inset';
+  selectionEndX?: number | null;
   setFloatingCommentBtn: React.Dispatch<React.SetStateAction<{ top: number; left: number } | null>>;
   isSuggesting?: boolean;
   author?: string;
@@ -386,6 +390,8 @@ export function DocxEditorPagedArea({
           editorContainerRef={scrollContainerRef}
           onExpandedItemChange={setExpandedSidebarItem}
           activeItemId={expandedSidebarItem}
+          overflow={commentSidebarOverflow}
+          selectionEndX={selectionEndX}
         />
       )}
       <CommentMarginMarkers
@@ -409,6 +415,8 @@ export function DocxEditorPagedArea({
       <Tooltip content={t('editor.addComment')} side="bottom" delayMs={300}>
         <button
           type="button"
+          className="docx-comment-button"
+          data-docx-comment-button=""
           onMouseDown={(e) => {
             e.preventDefault();
             e.stopPropagation();

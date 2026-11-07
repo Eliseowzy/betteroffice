@@ -27,7 +27,14 @@ export interface UnifiedSidebarProps {
   documentShift?: number;
   /** Column width; defaults to `SIDEBAR_WIDTH`. */
   width?: number;
+  /** `'inset'` pulls a column that overflows the container back inside its right edge. */
+  overflow?: 'clip' | 'inset';
+  /** Client X where the selection ended; the inset column prefers to start just right of it. */
+  selectionEndX?: number | null;
 }
+
+const INSET_MARGIN = 12;
+const INSET_GAP = 16;
 
 export function UnifiedSidebar({
   items,
@@ -40,6 +47,8 @@ export function UnifiedSidebar({
   activeItemId,
   documentShift = SIDEBAR_DOCUMENT_SHIFT,
   width = SIDEBAR_WIDTH,
+  overflow = 'clip',
+  selectionEndX = null,
 }: UnifiedSidebarProps) {
   const { t } = useTranslation();
   // Fully controlled: parent owns expansion state via activeItemId
@@ -223,12 +232,45 @@ export function UnifiedSidebar({
     [onExpandedItemChange]
   );
 
+  const [insetShift, setInsetShift] = useState(0);
+  const insetShiftRef = useRef(0);
+  useLayoutEffect(() => {
+    if (overflow !== 'inset') {
+      insetShiftRef.current = 0;
+      setInsetShift(0);
+      return;
+    }
+    const aside = sidebarRef.current;
+    const container = editorContainerRef?.current;
+    if (!aside || !container) return;
+    const measure = () => {
+      const rect = aside.getBoundingClientRect();
+      const area = container.getBoundingClientRect();
+      const left = rect.left - insetShiftRef.current;
+      const max = area.right - INSET_MARGIN - rect.width;
+      let shift = 0;
+      if (left > max) {
+        const preferred = selectionEndX != null ? selectionEndX + INSET_GAP : max;
+        shift = Math.round(Math.max(area.left + INSET_MARGIN, Math.min(max, preferred)) - left);
+      }
+      if (shift !== insetShiftRef.current) {
+        insetShiftRef.current = shift;
+        setInsetShift(shift);
+      }
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [overflow, selectionEndX, editorContainerRef, pageWidth, zoom, documentShift, width, items.length]);
+
   if (items.length === 0) return null;
 
   return (
     <aside
       ref={sidebarRef}
       className="docx-unified-sidebar"
+      data-docx-comment-sidebar=""
       role="complementary"
       aria-label={t('sidebar.ariaLabel')}
       style={{
@@ -236,6 +278,7 @@ export function UnifiedSidebar({
         top: 0,
         left: `calc(50% - ${documentShift}px + ${(pageWidth * zoom) / 2 + SIDEBAR_PAGE_GAP}px)`,
         width,
+        translate: insetShift ? `${insetShift}px 0` : undefined,
         fontFamily: "'Google Sans', Roboto, Arial, sans-serif",
         zIndex: 40,
         backgroundColor: 'transparent',

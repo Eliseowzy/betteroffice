@@ -107,6 +107,8 @@ import type {
 } from './DocxEditor/hooks/usePagedEditorRefApi';
 import { DocxCommandAdmissionError } from '../commands/createDocxCommandStore';
 import { DocxCommandProvider } from '../commands/DocxCommandProvider';
+import { observeDocxCommandStore, type DocxCommandExecution } from '../commands/createDocxCommandStore';
+import type { DocxCommentButtonPlacement } from './DocxEditor/hooks/useFloatingCommentBtn';
 import type { DocxCommandStore } from '../commands/types';
 import { EditorChromeContext, type EditorChrome } from './EditorToolbarContext';
 import { useControllableBoolean } from './DocxEditor/hooks/useControllableBoolean';
@@ -448,6 +450,12 @@ export interface DocxEditorBaseProps extends DocxEditorPluginProps {
   commentsSidebarOpen?: boolean;
   /** Fires with the next open state whenever the editor wants to show or hide the comments sidebar. Fires in both controlled and uncontrolled modes. */
   onCommentsSidebarOpenChange?: (open: boolean) => void;
+  /** `'inset'` pulls a comments sidebar the container cannot fit back inside its right edge, beside the selection end. Default `'clip'`. */
+  commentSidebarOverflow?: 'clip' | 'inset';
+  /** Places the floating "Add comment" button; return its center in client pixels, or nothing for the default. */
+  placeCommentButton?: DocxCommentButtonPlacement;
+  /** Fires after a command run from the editor's own toolbar, menus or dialogs settles; not for `ref.commands` calls. */
+  onCommandExecuted?: (execution: DocxCommandExecution) => void;
   /** Receives the editor's rendered-DOM context whenever a new frame or zoom rebuilds it. */
   onRenderedDomContextReady?: (context: RenderedDomContext) => void;
   /**
@@ -960,6 +968,9 @@ const LegacyDocxEditor = forwardRef<DocxEditorRef, DocxEditorBaseProps>(function
     onCommentsChange,
     commentsSidebarOpen,
     onCommentsSidebarOpenChange,
+    commentSidebarOverflow = 'clip',
+    placeCommentButton,
+    onCommandExecuted,
     onRenderedDomContextReady,
     onFirstPagePainted,
     pluginOverlays,
@@ -1555,6 +1566,15 @@ const LegacyDocxEditor = forwardRef<DocxEditorRef, DocxEditorBaseProps>(function
     refreshTrackedChanges: (session) => refreshTrackedChanges(session),
   });
   const commandController = commands.controller;
+  const onCommandExecutedRef = useRef(onCommandExecuted);
+  onCommandExecutedRef.current = onCommandExecuted;
+  const chromeCommands = useMemo(
+    () =>
+      observeDocxCommandStore(commandController.store, (execution) =>
+        onCommandExecutedRef.current?.(execution)
+      ),
+    [commandController.store]
+  );
   const runBridgeCommand = useCallback(
     (command: Parameters<PagedEditorCommandBridge['command']>[0]) =>
       commandOutcome(commandBridgeRef.current?.command(command) ?? false),
@@ -1740,6 +1760,7 @@ const LegacyDocxEditor = forwardRef<DocxEditorRef, DocxEditorBaseProps>(function
   // from the geometry-change effects below (resize, zoom), because PagedEditor's
   // onSelectionChange no longer fires on mere overlay redraws after the
   // state-identity dedup in #268.
+  const [selectionEndX, setSelectionEndX] = useState<number | null>(null);
   const { recomputeFloatingCommentBtn } = useFloatingCommentBtn({
     pagedEditorRef,
     scrollContainerRef,
@@ -1752,6 +1773,8 @@ const LegacyDocxEditor = forwardRef<DocxEditorRef, DocxEditorBaseProps>(function
     zoom: state.zoom,
     canvasHostRef: canvasRenderer.canvasHostRef,
     displayListQueries: canvasRenderer.queries,
+    placeCommentButton,
+    onSelectionEndX: commentSidebarOverflow === 'inset' ? setSelectionEndX : undefined,
   });
 
   const { handleYrsSelectionChange, handleViewerSelectionChange } = useSelectionTracker({
@@ -2655,7 +2678,7 @@ const LegacyDocxEditor = forwardRef<DocxEditorRef, DocxEditorBaseProps>(function
   };
 
   return (
-    <DocxCommandProvider commands={commandController.store}>
+    <DocxCommandProvider commands={chromeCommands}>
       <DocxEditorShell
         i18n={i18n}
         isDark={isDark}
@@ -2856,6 +2879,8 @@ const LegacyDocxEditor = forwardRef<DocxEditorRef, DocxEditorBaseProps>(function
               setAddCommentYPosition={setAddCommentYPosition}
               setIsAddingComment={setIsAddingComment}
               setFloatingCommentBtn={setFloatingCommentBtn}
+              commentSidebarOverflow={commentSidebarOverflow}
+              selectionEndX={selectionEndX}
             />
             {!readOnly && yrsCore.replicaReady && (
               <ContentControlWidgets

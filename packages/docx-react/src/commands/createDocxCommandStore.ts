@@ -571,3 +571,49 @@ export function docxCommandController(store: DocxCommandStore): DocxCommandContr
 
 /** A store without an editor: every command reports `editor-unavailable`. */
 export const UNAVAILABLE_DOCX_COMMANDS: DocxCommandStore = createDocxCommandController().store;
+
+/** A command a user ran from the editor's own chrome. */
+export interface DocxCommandExecution {
+  id: DocxCommandId | DocxPluginCommandId;
+  args: unknown;
+  result: DocxPluginCommandResult;
+}
+
+/** Wraps `store` so every command run through it reports its result to `onExecuted`. */
+export function observeDocxCommandStore(
+  store: DocxCommandStore,
+  onExecuted: (execution: DocxCommandExecution) => void
+): DocxCommandStore {
+  const report = <R extends DocxPluginCommandResult>(
+    id: DocxCommandId | DocxPluginCommandId,
+    args: unknown,
+    pending: Promise<R>
+  ): Promise<R> =>
+    pending.then((result) => {
+      onExecuted({ id, args, result });
+      return result;
+    });
+  const observed = Object.freeze({
+    getDescriptor: store.getDescriptor,
+    getState: store.getState,
+    subscribe: store.subscribe,
+    execute: (id: AnyCommandId, args: unknown) =>
+      report(id, args, (store.execute as (id: AnyCommandId, args: unknown) => Promise<DocxPluginCommandResult>)(id, args)),
+  }) as DocxCommandStore;
+  const controller = controllers.get(store);
+  if (controller) {
+    controllers.set(observed, {
+      ...controller,
+      store: observed,
+      defer(id, args, target) {
+        const deferred = controller.defer(id, args, target);
+        return { complete: (write) => report(id, args, deferred.complete(write)) };
+      },
+      prepare(id, target) {
+        const pending = controller.prepare(id, target);
+        return { execute: (args) => report(id, args, pending.execute(args)) };
+      },
+    });
+  }
+  return observed;
+}

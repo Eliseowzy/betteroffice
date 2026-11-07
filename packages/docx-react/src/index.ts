@@ -49,7 +49,8 @@ export type {
 
 // Commands: one authority for built-in and host chrome
 export { DocxCommandProvider, type DocxCommandProviderProps } from './commands/DocxCommandProvider';
-export { DocxCommandAdmissionError, type DocxCommandAdmissionCode } from './commands/createDocxCommandStore';
+export { DocxCommandAdmissionError, type DocxCommandAdmissionCode, type DocxCommandExecution } from './commands/createDocxCommandStore';
+export type { DocxCommentButtonPlacement, DocxCommentButtonPlacementContext } from './components/DocxEditor/hooks/useFloatingCommentBtn';
 export {
   useDocxCommands,
   useDocxCommandState,

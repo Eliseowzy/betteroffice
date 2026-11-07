@@ -6,6 +6,19 @@ import {
 } from '@betteroffice/docx/layout/render';
 import type { PagedEditorRef } from '../PagedEditor';
 
+/** Where the selection ends, and the editor's content box, in client pixels. */
+export interface DocxCommentButtonPlacementContext {
+  selectionEnd: { x: number; top: number; bottom: number };
+  container: DOMRect;
+  /** Center the editor would use: the page's right edge, level with the selection start. */
+  defaultCenter: { x: number; y: number };
+}
+
+/** Returns the button's center in client pixels, or `null`/`undefined` for the default. */
+export type DocxCommentButtonPlacement = (
+  context: DocxCommentButtonPlacementContext
+) => { x: number; y: number } | null | undefined;
+
 /**
  * Owns the floating "Add comment" button that hovers next to a
  * non-empty selection on the right edge of the page. Recomputes its
@@ -38,6 +51,8 @@ export function useFloatingCommentBtn({
   zoom,
   canvasHostRef,
   displayListQueries,
+  placeCommentButton,
+  onSelectionEndX,
 }: {
   pagedEditorRef: React.RefObject<PagedEditorRef | null>;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
@@ -52,7 +67,14 @@ export function useFloatingCommentBtn({
   canvasHostRef?: React.RefObject<HTMLDivElement | null>;
   /** display-list queries — non-null exactly while the canvas renderer paints */
   displayListQueries?: DisplayListQueries | null;
+  placeCommentButton?: DocxCommentButtonPlacement;
+  /** Receives the client X of each non-empty selection's end. */
+  onSelectionEndX?: (x: number) => void;
 }) {
+  const placeRef = useRef(placeCommentButton);
+  placeRef.current = placeCommentButton;
+  const endXRef = useRef(onSelectionEndX);
+  endXRef.current = onSelectionEndX;
   const readOnlyForFloatingBtnRef = useRef(false);
   readOnlyForFloatingBtnRef.current = readOnly;
   const partEditOpenRef = useRef(false);
@@ -90,6 +112,35 @@ export function useFloatingCommentBtn({
     const scaleY = size.height > 0 ? pageRect.height / size.height : 1;
     const top = (pageRect.top - parentRect.top + rect.y * scaleY) / parentZoom;
     const left = (pageRect.right - parentRect.left) / parentZoom;
+    const place = placeRef.current;
+    const reportEnd = endXRef.current;
+    if (place || reportEnd) {
+      const end = queries.anchorRect(to);
+      const endPage = end ? resolveDisplayPageClientRect(host, queries, end.pageIndex) : null;
+      const endSize = end ? queries.pageSize(end.pageIndex) : null;
+      if (end && endPage && endSize) {
+        const sx = endSize.width > 0 ? endPage.width / endSize.width : 1;
+        const sy = endSize.height > 0 ? endPage.height / endSize.height : 1;
+        const selectionEnd = {
+          x: endPage.left + end.x * sx,
+          top: endPage.top + end.y * sy,
+          bottom: endPage.top + (end.y + end.height) * sy,
+        };
+        reportEnd?.(selectionEnd.x);
+        const center = place?.({
+          selectionEnd,
+          container: parentRect,
+          defaultCenter: { x: pageRect.right, y: pageRect.top + rect.y * scaleY },
+        });
+        if (center) {
+          setFloatingCommentBtn({
+            top: (center.y - parentRect.top) / parentZoom,
+            left: (center.x - parentRect.left) / parentZoom,
+          });
+          return;
+        }
+      }
+    }
     setFloatingCommentBtn({ top, left });
   }, [
     pagedEditorRef,

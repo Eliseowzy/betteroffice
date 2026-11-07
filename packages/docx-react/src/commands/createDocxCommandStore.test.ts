@@ -2,7 +2,10 @@ import { describe, expect, mock, test } from 'bun:test';
 import { en } from '@betteroffice/docx-i18n';
 import {
   createDocxCommandController,
+  docxCommandController,
   DocxCommandAdmissionError,
+  observeDocxCommandStore,
+  type DocxCommandExecution,
   UNAVAILABLE_DOCX_COMMANDS,
 } from './createDocxCommandStore';
 import { DOCX_COMMAND_DESCRIPTORS, DOCX_COMMAND_IDS, formatChord, matchesChord } from './descriptors';
@@ -311,5 +314,20 @@ describe('command descriptors', () => {
     expect(matchesChord('Mod+B', event({ key: 'b', ctrlKey: true, metaKey: true }), false)).toBe(false);
     expect(formatChord('Mod+Shift+Z', false)).toBe('Ctrl+Shift+Z');
     expect(formatChord('Mod+B', true)).toBe('⌘B');
+  });
+});
+
+describe('observeDocxCommandStore', () => {
+  test('reports executions through the store and prepared commands', async () => {
+    const { store } = setup();
+    const seen: DocxCommandExecution[] = [];
+    const observed = observeDocxCommandStore(store, (execution) => seen.push(execution));
+    const direct = await observed.execute('highlightColor', { color: 'yellow' });
+    expect(seen).toEqual([{ id: 'highlightColor', args: { color: 'yellow' }, result: direct }]);
+    expect(observed.getState('bold')).toBe(store.getState('bold'));
+    const pending = docxCommandController(observed)!.prepare('fontSize', 'selection');
+    await pending.execute({ points: 14 });
+    expect(seen.map((execution) => execution.id)).toEqual(['highlightColor', 'fontSize']);
+    expect(seen[1]!.args).toEqual({ points: 14 });
   });
 });
