@@ -1,0 +1,26 @@
+[package]
+name = "betteroffice-docx-native-save"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+publish = false
+description = "Native DOCX save of a docx-edit session: the Yrs state written as package bytes without a JS runtime."
+
+[lib]
+name = "docx_native_save"
+
+[dependencies]
+docx-edit.workspace = true
+docx-parse.workspace = true
+ooxml-opc.workspace = true
+indexmap = { version = "2", features = ["serde"] }
+ryu-js = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+sha2 = "0.10"
+base64 = "0.22"
+
+[dev-dependencies]
+zip = { version = "9", default-features = false, features = ["deflate"] }
