@@ -21,32 +21,48 @@ fn engine<T>(result: std::result::Result<T, EngineError>) -> Result<T> {
     result.map_err(|e| SaveError::new(e.to_string()))
 }
 
-/// What the facade keeps about the package a session was opened from.
+/// What the facade keeps about the package a session was opened from: `Send`, to be held
+/// beside the session between saves.
 #[derive(Clone)]
 pub struct OpenedSource {
-    /// The source package bytes (`docxSource`).
-    pub bytes: Rc<Vec<u8>>,
-    /// `editorSaveKeys(host.document)` of the opened host document (`docxSourceKeys`).
-    pub keys: Js,
+    bytes: std::sync::Arc<Vec<u8>>,
+    keys: String,
 }
 
 impl OpenedSource {
     /// The facade's bookkeeping after `openDocx(bytes, …)` or `bootstrapPeer(…, bytes, host)`:
     /// `open_json` is what `open_docx` returned for `bytes`.
     pub fn after_open(bytes: Vec<u8>, open_json: &str) -> Result<Self> {
-        let bytes = Rc::new(bytes);
-        let host = crate::parse_facade::decode_docx_host(open_json, &bytes)?;
+        let shared = Rc::new(bytes);
+        let host = crate::parse_facade::decode_docx_host(open_json, &shared)?;
         let document = host.get("document");
-        document.set("originalBuffer", Js::Bytes(bytes.clone()));
-        let keys = editor_save_keys(&document, &Js::Undefined)?;
-        Ok(Self { bytes, keys })
+        document.set("originalBuffer", Js::Bytes(shared.clone()));
+        let keys = editor_save_keys(&document, &Js::Undefined)?
+            .stringify()
+            .unwrap_or_default();
+        drop(document);
+        drop(host);
+        let bytes = Rc::try_unwrap(shared).unwrap_or_else(|rc| (*rc).clone());
+        Ok(Self { bytes: std::sync::Arc::new(bytes), keys })
     }
+
+    /// The source package bytes.
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+/// `sessionSourcePackage(session)`: the source bytes (`docxSource`) and
+/// `editorSaveKeys(host.document)` of the opened host document (`docxSourceKeys`).
+pub struct SourcePackage {
+    pub bytes: Rc<Vec<u8>>,
+    pub keys: Js,
 }
 
 /// A session being saved.
 pub struct Session<'a> {
     pub core: &'a EditSessionCore,
-    source: Option<OpenedSource>,
+    source: Option<SourcePackage>,
     materialized: RefCell<Option<Js>>,
     separators: RefCell<Option<Js>>,
     media: RefCell<HashMap<String, Option<String>>>,
@@ -54,15 +70,22 @@ pub struct Session<'a> {
 }
 
 impl<'a> Session<'a> {
-    pub fn new(core: &'a EditSessionCore, source: Option<OpenedSource>) -> Self {
-        Self {
+    pub fn new(core: &'a EditSessionCore, source: Option<&OpenedSource>) -> Result<Self> {
+        let source = match source {
+            Some(opened) => Some(SourcePackage {
+                bytes: Rc::new((*opened.bytes).clone()),
+                keys: Js::parse(&opened.keys)?,
+            }),
+            None => None,
+        };
+        Ok(Self {
             core,
             source,
             materialized: RefCell::new(None),
             separators: RefCell::new(None),
             media: RefCell::new(HashMap::new()),
             aliases: RefCell::new(None),
-        }
+        })
     }
 
     pub fn story_segments(&self, story: &str) -> Result<Js> {
@@ -191,7 +214,7 @@ impl<'a> Session<'a> {
     }
 
     /// `sessionSourcePackage(session)`: `{ buffer, keys }` or `None`.
-    pub fn source_package(&self) -> Option<&OpenedSource> {
+    pub fn source_package(&self) -> Option<&SourcePackage> {
         self.source.as_ref()
     }
 

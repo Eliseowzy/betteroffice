@@ -10,5 +10,5 @@ use crate::{arr, obj, throw};
 
 /// `isRawXml` (src/types/content/rawXml.ts:8).
 pub(crate) fn is_raw_xml(value: &Js) -> Result<bool> {
-    todo!("isRawXml")
+    Ok(value.get("type").as_str() == Some("rawXml"))
 }

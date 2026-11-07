@@ -13,7 +13,7 @@ name = "docx_native_save"
 
 [dependencies]
 docx-edit.workspace = true
-docx-parse.workspace = true
+docx-parse = { workspace = true, features = ["tiff"] }
 ooxml-opc.workspace = true
 indexmap = { version = "2", features = ["serde"] }
 ryu-js = "1"

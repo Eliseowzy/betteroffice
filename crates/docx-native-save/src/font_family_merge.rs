@@ -10,5 +10,28 @@ use crate::{arr, obj, throw};
 
 /// `mergeFontFamily` (src/utils/fontFamilyMerge.ts:18).
 pub(crate) fn merge_font_family(target: &Js, source: &Js) -> Result<Js> {
-    todo!("mergeFontFamily")
+    let result = if target.truthy() { target.spread() } else { Js::new_obj() };
+    let src = source;
+    let pairs = [("ascii", "asciiTheme"), ("hAnsi", "hAnsiTheme"), ("eastAsia", "eastAsiaTheme"), ("cs", "csTheme")];
+    let mut pair_keys: Vec<&str> = Vec::new();
+    for (explicit, theme) in pairs {
+        pair_keys.push(explicit);
+        pair_keys.push(theme);
+        if !src.get(explicit).is_undefined() || !src.get(theme).is_undefined() {
+            result.delete(explicit);
+            result.delete(theme);
+            if !src.get(explicit).is_undefined() {
+                result.set(explicit, src.get(explicit));
+            }
+            if !src.get(theme).is_undefined() {
+                result.set(theme, src.get(theme));
+            }
+        }
+    }
+    for key in src.keys() {
+        if !pair_keys.contains(&key.as_str()) && !src.get(&key).is_undefined() {
+            result.set(&key, src.get(&key));
+        }
+    }
+    Ok(result)
 }

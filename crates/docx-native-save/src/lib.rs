@@ -51,6 +51,10 @@ pub struct SaveOptions {
     pub now: Option<String>,
     /// Keep the JSON request handed to the package writer in [`SavedDocx::wire`].
     pub capture_wire: bool,
+    /// Publish the Word paragraph IDs the save wrote in the session (`recordSavedParagraphIds`),
+    /// a Yrs change. Off, the save only reads the session and every written paragraph is
+    /// reported in [`SavedDocx::paragraphs`] (none as a conflict); the bytes are the same.
+    pub record_saved_paragraph_ids: bool,
 }
 
 impl Default for SaveOptions {
@@ -60,6 +64,7 @@ impl Default for SaveOptions {
             modified_by: None,
             now: None,
             capture_wire: false,
+            record_saved_paragraph_ids: true,
         }
     }
 }
@@ -84,6 +89,6 @@ pub fn save_docx(
     source: &OpenedSource,
     options: &SaveOptions,
 ) -> Result<SavedDocx, SaveError> {
-    let session = session::Session::new(core, Some(source.clone()));
+    let session = session::Session::new(core, Some(source))?;
     save::save_docx_native(&session, options)
 }
