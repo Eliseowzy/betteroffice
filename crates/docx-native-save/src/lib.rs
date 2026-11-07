@@ -37,3 +37,53 @@ mod yrs_to_document;
 
 pub use js::SaveError;
 pub use session::OpenedSource;
+
+use docx_edit::session::EditSessionCore;
+
+/// How [`save_docx`] writes the package.
+#[derive(Debug, Clone)]
+pub struct SaveOptions {
+    /// Stamp `dcterms:modified` (the TS `updateModifiedDate`, default true).
+    pub update_modified_date: bool,
+    /// `cp:lastModifiedBy` (the TS `modifiedBy`).
+    pub modified_by: Option<String>,
+    /// The save's clock as an ISO 8601 UTC string (`new Date().toISOString()`); now when `None`.
+    pub now: Option<String>,
+    /// Keep the JSON request handed to the package writer in [`SavedDocx::wire`].
+    pub capture_wire: bool,
+}
+
+impl Default for SaveOptions {
+    fn default() -> Self {
+        Self {
+            update_modified_date: true,
+            modified_by: None,
+            now: None,
+            capture_wire: false,
+        }
+    }
+}
+
+/// What [`save_docx`] wrote: `DocxSavedDocument` of the TS save.
+#[derive(Debug, Clone)]
+pub struct SavedDocx {
+    pub bytes: Vec<u8>,
+    /// `paragraphs`: each saved session paragraph's session and persisted anchors.
+    pub paragraphs: js::Js,
+    /// `conflicts`: saved paragraphs whose Word paragraph ID the live session reassigned.
+    pub conflicts: js::Js,
+    pub warnings: Vec<String>,
+    /// The writer request, when [`SaveOptions::capture_wire`].
+    pub wire: Option<String>,
+}
+
+/// Saves `core`, opened from `source`, as `saveYrsDocx(session)` does: unchanged parts keep their
+/// source bytes, and the Word paragraph IDs the save writes are recorded in the session.
+pub fn save_docx(
+    core: &EditSessionCore,
+    source: &OpenedSource,
+    options: &SaveOptions,
+) -> Result<SavedDocx, SaveError> {
+    let session = session::Session::new(core, Some(source.clone()));
+    save::save_docx_native(&session, options)
+}

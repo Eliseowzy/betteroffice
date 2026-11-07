@@ -92,3 +92,9 @@ pub(crate) fn write_session_save(session: &Session, document: &Js, capture: &Js,
 pub(crate) fn save_yrs_docx(session: &Session, options: &Js) -> Result<Js> {
     todo!("saveYrsDocx")
 }
+
+/// The native entry point: `saveYrsDocx(session, { updateModifiedDate, modifiedBy })` with the
+/// writer's determinism `now` taken from `options.now` when given.
+pub(crate) fn save_docx_native(session: &Session, options: &crate::SaveOptions) -> Result<crate::SavedDocx> {
+    todo!("save_docx_native")
+}
