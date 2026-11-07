@@ -1,4 +1,4 @@
-// Builds the pptx packages from this checkout and packs them as npm tarballs for a host app.
+// Builds the pptx and docx packages from this checkout and packs them as npm tarballs for a host app.
 //
 //   bun scripts/finx-pack.ts [--out <dir>] [--skip-build] [--allow-dirty]
 //
@@ -11,10 +11,10 @@ import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'n
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Dependency order: pptx-i18n has no workspace dependencies in this set. @betteroffice/fonts is
+// Dependency order: the i18n packages have no workspace dependencies in this set. @betteroffice/fonts is
 // not repacked: we do not change it, and its own font-pack dependencies are only on npm, so
 // `bun pm pack` pins it to the published release.
-const PACKAGES = ['pptx-i18n', 'pptx', 'pptx-react'] as const;
+const PACKAGES = ['pptx-i18n', 'pptx', 'pptx-react', 'docx-i18n', 'docx', 'docx-react'] as const;
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const flag = (name: string) => args.includes(name);
@@ -42,6 +42,8 @@ if (!flag('--skip-build')) {
   run('bun', ['run', 'build:pptx-wasm']);
   run('bun', ['run', 'build:fonts']); // pptx-react's type build imports it
   run('bun', ['run', 'build:pptx']);
+  run('bun', ['run', 'build:docx-wasm']);
+  run('bun', ['run', 'build:docx']);
 }
 
 for (const name of PACKAGES) {
