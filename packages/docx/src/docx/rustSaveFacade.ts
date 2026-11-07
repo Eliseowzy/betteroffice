@@ -11,6 +11,7 @@ import {
   preloadParseWasm,
   writeDocxS13WithWarningsWire,
 } from './parseWasm';
+import { reportSaveWire } from '../yrs/nativeSaveProbe';
 import { withSessionRevisionIds } from './sessionRevisionIds';
 import { collectParts, headerFooterFilename, partText } from './rezip/parts';
 import { preloadOpcWasm, unzipContainer } from './wasm';
@@ -157,6 +158,7 @@ export async function writeDocumentWithRust(
   const wire = withSessionRevisionIds(request, () => JSON.stringify(request));
   engineProgress();
   if (yieldSave) await yieldSave();
+  reportSaveWire(wire);
   const { bytes, warnings } = writeDocxS13WithWarningsWire(wire, new Uint8Array(originalBuffer));
   engineProgress();
   const buffer = exactArrayBuffer(bytes);
