@@ -195,20 +195,24 @@ pub(crate) fn write_document_with_rust(
     if !paragraph_ids.is_undefined() {
         request.set("paragraphIds", paragraph_ids.clone());
     }
-    assert_safe_save_tree(&request, "save", &Js::Undefined)?;
+    crate::js::timed("assert_safe_save_tree", || {
+        assert_safe_save_tree(&request, "save", &Js::Undefined)
+    })?;
     let request_for_write = request.clone();
-    let wire =
-        with_session_revision_ids(&request, &|| Ok(Js::from(request_for_write.stringify())))?;
+    let wire = crate::js::timed("stringify wire", || {
+        with_session_revision_ids(&request, &|| Ok(Js::from(request_for_write.stringify())))
+    })?;
     let wire = wire.as_str().unwrap_or_default().to_owned();
     CONTEXT.with(|c| {
-        if let Some(context) = c.borrow_mut().as_mut() {
-            if context.capture_wire {
+        if let Some(context) = c.borrow_mut().as_mut()
+            && context.capture_wire {
                 context.wire = Some(wire.clone());
             }
-        }
     });
-    let framed = docx_parse::write_docx_s13_with_warnings_json(&wire, original_buffer)
-        .map_err(SaveError::new)?;
+    let framed = crate::js::timed("writer (docx-parse)", || {
+        docx_parse::write_docx_s13_with_warnings_json(&wire, original_buffer)
+    })
+    .map_err(SaveError::new)?;
     if framed.len() < 8 {
         throw!("Rust save response is truncated");
     }
@@ -223,7 +227,9 @@ pub(crate) fn write_document_with_rust(
     }
     let buffer = Rc::new(framed[warnings_end..].to_vec());
     if selective.is_undefined() && !skip_mutations {
-        apply_rust_save_mutations(document, original_buffer, &buffer)?;
+        crate::js::timed("apply_rust_save_mutations", || {
+            apply_rust_save_mutations(document, original_buffer, &buffer)
+        })?;
     }
     let mut all: Vec<Js> = document.get("warnings").items();
     all.extend(warnings.items());
@@ -319,11 +325,10 @@ pub(crate) fn apply_rust_save_mutations(
                     break;
                 }
             }
-            if let Some(id) = found.and_then(|tag| attr(tag, "Id")) {
-                if !id.is_empty() {
+            if let Some(id) = found.and_then(|tag| attr(tag, "Id"))
+                && !id.is_empty() {
                     hyperlink.set("rId", id);
                 }
-            }
         }
     }
 
@@ -366,11 +371,10 @@ pub(crate) fn apply_rust_save_mutations(
                     _ => true,
                 }
             });
-        if let Some(id) = matched.and_then(|tag| attr(&tag, "Id")) {
-            if !id.is_empty() {
+        if let Some(id) = matched.and_then(|tag| attr(&tag, "Id"))
+            && !id.is_empty() {
                 watermark.set("relId", id);
             }
-        }
     }
     Ok(())
 }

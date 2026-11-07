@@ -174,11 +174,10 @@ pub(crate) fn with_session_revision_ids(tree: &Js, write: &dyn Fn() -> Result<Js
             let comment = value.get("content").is_arr();
             note(&value.get("id"), !comment, used, max);
             note(&value.get("revisionId"), !comment, used, max);
-        } else if let Some(t) = value.get("type").as_str() {
-            if ANNOTATIONS.contains(&t) {
+        } else if let Some(t) = value.get("type").as_str()
+            && ANNOTATIONS.contains(&t) {
                 note(&value.get("id"), !COMMENT_MARKERS.contains(&t), used, max);
             }
-        }
         for child in value.keys() {
             visit(
                 &value.get(&child),
@@ -238,6 +237,11 @@ pub(crate) fn with_session_revision_ids(tree: &Js, write: &dyn Fn() -> Result<Js
 pub(crate) fn reset_marks_for_test() {
     MARKED.with(|m| m.set(false));
     SESSION_INFOS.with(Marks::clear);
+}
+
+/// Drops the `SESSION_INFOS` entries of objects that no longer exist.
+pub(crate) fn prune_session_infos() {
+    SESSION_INFOS.with(|marks| marks.clear());
 }
 
 #[cfg(test)]

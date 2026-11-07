@@ -1,21 +1,21 @@
 //! Port of `packages/docx/src/yrs/yrsToDocument.ts` (part).
 #![allow(unused_variables, unused_imports, dead_code, clippy::all)]
 
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
-use indexmap::IndexMap;
+use super::*;
 use crate::js::{self, Js, Marks, Result, SaveError};
 use crate::session::{Inheritance, Session};
 use crate::{arr, obj, throw};
-use super::*;
+use indexmap::IndexMap;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use crate::content_control_values::apply_content_control_value;
 use crate::font_family_merge::merge_font_family;
 use crate::header_footer_alias_projection::{header_footer_alias_of, mark_header_footer_alias};
 use crate::sdt_attributes::sdt_attrs_to_props;
 use crate::sections::section_properties_equal;
-use crate::style_resolver::{create_style_resolver, StyleResolver};
+use crate::style_resolver::{StyleResolver, create_style_resolver};
 use crate::table_row_spans::seeded_cell_indices;
 
 // ----- small JS helpers -----
@@ -44,8 +44,14 @@ fn type_is(value: &Js, ty: &str) -> bool {
 fn is_js_space(c: char) -> bool {
     matches!(
         c,
-        '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r' | ' ' | '\u{A0}' | '\u{1680}' | '\u{2000}'..='\u{200A}'
-            | '\u{2028}' | '\u{2029}' | '\u{202F}' | '\u{205F}' | '\u{3000}' | '\u{FEFF}'
+        '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r' | ' ' | '\u{A0}' | '\u{1680}' | '\u{2000}'
+            ..='\u{200A}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202F}'
+                | '\u{205F}'
+                | '\u{3000}'
+                | '\u{FEFF}'
     )
 }
 
@@ -65,17 +71,26 @@ fn digits(s: &str) -> Option<&str> {
 
 /// `s` matches `:r\d+c\d+(?:~\d+)?$`.
 fn cell_suffix(s: &str) -> bool {
-    let Some(rest) = s.strip_prefix(":r").and_then(digits) else { return false };
-    let Some(rest) = rest.strip_prefix('c').and_then(digits) else { return false };
+    let Some(rest) = s.strip_prefix(":r").and_then(digits) else {
+        return false;
+    };
+    let Some(rest) = rest.strip_prefix('c').and_then(digits) else {
+        return false;
+    };
     if rest.is_empty() {
         return true;
     }
-    rest.strip_prefix('~').and_then(digits).map_or(false, str::is_empty)
+    rest.strip_prefix('~')
+        .and_then(digits)
+        .map_or(false, str::is_empty)
 }
 
 /// `NESTED_STORY_ID.exec(story)?.[1]`: `/^(.*?)(?::t\d+:r\d+c\d+(?:~\d+)?|:sdt\d+)$/`.
 fn nested_story_parent(story: &str) -> Option<String> {
-    for (i, c) in story.char_indices().chain(std::iter::once((story.len(), '\0'))) {
+    for (i, c) in story
+        .char_indices()
+        .chain(std::iter::once((story.len(), '\0')))
+    {
         let rest = &story[i..];
         let table = rest
             .strip_prefix(":t")
@@ -133,7 +148,13 @@ fn bookmark_kind(xml: &str) -> Option<&'static str> {
 fn js_slice(arr: &Js, start: f64, end: Option<f64>) -> Js {
     let items = arr.items();
     let len = items.len() as f64;
-    let norm = |v: f64| if v < 0.0 { (len + v).max(0.0) } else { v.min(len) };
+    let norm = |v: f64| {
+        if v < 0.0 {
+            (len + v).max(0.0)
+        } else {
+            v.min(len)
+        }
+    };
     let s = norm(start);
     let e = norm(end.unwrap_or(len));
     if e <= s {
@@ -190,7 +211,11 @@ fn str_arr(values: &[String]) -> Js {
 }
 
 fn arr_strings(value: &Js) -> Vec<String> {
-    value.items().iter().map(|v| v.str_or_empty().to_owned()).collect()
+    value
+        .items()
+        .iter()
+        .map(|v| v.str_or_empty().to_owned())
+        .collect()
 }
 
 /// `TABLE_CELL_ATTR_DEFAULTS` (src/yrs/yrsToDocument.ts:205).
@@ -257,7 +282,9 @@ pub(crate) fn projected_blocks_set(block: &Js, memo: ProjectedBlockMemo) {
 
 /// `projectedBlocks.get(paragraph)?.sourceRuns` (read by `restoreOriginalRuns`).
 pub(crate) fn projected_block_source_runs(paragraph: &Js) -> Js {
-    projected_blocks_get(paragraph).map(|m| m.source_runs).unwrap_or_default()
+    projected_blocks_get(paragraph)
+        .map(|m| m.source_runs)
+        .unwrap_or_default()
 }
 
 fn session_key_of(session: &Session) -> usize {
@@ -273,7 +300,11 @@ fn clear_session_projection_memo(session: &Session) {
 // ----- chart recovery -----
 
 /// `ChartRecovery.drawingFor` of a recovery built by [`SaveContext::recovery`].
-pub(crate) fn recovery_drawing_for(recovery: &Js, r_id: Option<&str>, path: Option<&str>) -> Option<String> {
+pub(crate) fn recovery_drawing_for(
+    recovery: &Js,
+    r_id: Option<&str>,
+    path: Option<&str>,
+) -> Option<String> {
     let scoped = recovery.get("scoped");
     let by_rid = match r_id {
         Some(r_id) if scoped.is_map() => scoped.map_get(&format!("rId:{r_id}")),
@@ -404,18 +435,38 @@ fn collect_base_stories_map(session: &Session, document: &Js) -> Result<IndexMap
 
     let mut stories = IndexMap::new();
     let package = document.get("package");
-    visit(&mut stories, "body".into(), package.path(&["document", "content"]))?;
+    visit(
+        &mut stories,
+        "body".into(),
+        package.path(&["document", "content"]),
+    )?;
     for (r_id, part) in package.get("headers").map_entries() {
-        visit(&mut stories, session.header_footer_story(&r_id), part.get("content"))?;
+        visit(
+            &mut stories,
+            session.header_footer_story(&r_id),
+            part.get("content"),
+        )?;
     }
     for (r_id, part) in package.get("footers").map_entries() {
-        visit(&mut stories, session.header_footer_story(&r_id), part.get("content"))?;
+        visit(
+            &mut stories,
+            session.header_footer_story(&r_id),
+            part.get("content"),
+        )?;
     }
     for note in package.get("footnotes").items() {
-        visit(&mut stories, format!("fn:{}", key_of(&note.get("id"))), note.get("content"))?;
+        visit(
+            &mut stories,
+            format!("fn:{}", key_of(&note.get("id"))),
+            note.get("content"),
+        )?;
     }
     for note in package.get("endnotes").items() {
-        visit(&mut stories, format!("en:{}", key_of(&note.get("id"))), note.get("content"))?;
+        visit(
+            &mut stories,
+            format!("en:{}", key_of(&note.get("id"))),
+            note.get("content"),
+        )?;
     }
     Ok(stories)
 }
@@ -425,7 +476,11 @@ pub(crate) fn collect_base_stories(session: &Session, document: &Js) -> Result<J
     Ok(Js::map_from(collect_base_stories_map(session, document)?))
 }
 
-fn comment_ranges_map(session: &Session, comments: &Js, session_ids: &Js) -> Result<IndexMap<String, Js>> {
+fn comment_ranges_map(
+    session: &Session,
+    comments: &Js,
+    session_ids: &Js,
+) -> Result<IndexMap<String, Js>> {
     let mut by_story: IndexMap<String, Js> = IndexMap::new();
     for comment in comments.items() {
         let id = comment.get("id");
@@ -434,20 +489,30 @@ fn comment_ranges_map(session: &Session, comments: &Js, session_ids: &Js) -> Res
         } else {
             Js::Undefined
         };
-        let lookup = if mapped.is_nullish() { key_of(&id) } else { key_of(&mapped) };
+        let lookup = if mapped.is_nullish() {
+            key_of(&id)
+        } else {
+            key_of(&mapped)
+        };
         let anchors = match session.resolve_comment(&lookup) {
             Ok(anchors) => anchors,
             Err(_) => continue,
         };
         let mut story_groups: IndexMap<String, Vec<Js>> = IndexMap::new();
         for anchor in anchors.items() {
-            story_groups.entry(key_of(&anchor.get("story"))).or_default().push(anchor);
+            story_groups
+                .entry(key_of(&anchor.get("story")))
+                .or_default()
+                .push(anchor);
         }
         for (story, group) in story_groups {
             if group.is_empty() {
                 continue;
             }
-            let starts: Vec<f64> = group.iter().map(|a| js::to_number(&a.get("start"))).collect();
+            let starts: Vec<f64> = group
+                .iter()
+                .map(|a| js::to_number(&a.get("start")))
+                .collect();
             let ends: Vec<f64> = group.iter().map(|a| js::to_number(&a.get("end"))).collect();
             let start = js_min(&starts);
             let end = js_max(&ends);
@@ -463,7 +528,11 @@ fn comment_ranges_map(session: &Session, comments: &Js, session_ids: &Js) -> Res
 
 /// `commentRanges` (src/yrs/yrsToDocument.ts:2970).
 pub(crate) fn comment_ranges(session: &Session, comments: &Js, session_ids: &Js) -> Result<Js> {
-    Ok(Js::map_from(comment_ranges_map(session, comments, session_ids)?))
+    Ok(Js::map_from(comment_ranges_map(
+        session,
+        comments,
+        session_ids,
+    )?))
 }
 
 /// `collectChartDrawings` (src/yrs/yrsToDocument.ts:3008). `into` is a `Js::Map`.
@@ -510,7 +579,11 @@ pub(crate) fn paragraph_chart_runs(content: &Js) -> Result<Js> {
         match ty.as_str() {
             Some("run") => runs.push(child.clone()),
             Some("hyperlink") => {
-                for inline in child.get("structuredChildren").nullish_or(child.get("children")).items() {
+                for inline in child
+                    .get("structuredChildren")
+                    .nullish_or(child.get("children"))
+                    .items()
+                {
                     visit_inline(&inline, runs);
                 }
             }
@@ -527,7 +600,12 @@ pub(crate) fn paragraph_chart_runs(content: &Js) -> Result<Js> {
                 }
             }
             Some("complexField") => {
-                for run in child.get("fieldCode").items().into_iter().chain(child.get("fieldResult").items()) {
+                for run in child
+                    .get("fieldCode")
+                    .items()
+                    .into_iter()
+                    .chain(child.get("fieldResult").items())
+                {
                     runs.push(run);
                 }
             }
@@ -550,7 +628,8 @@ pub(crate) fn paragraph_chart_runs(content: &Js) -> Result<Js> {
 
 /// `isBlockBookmark` (src/yrs/yrsToDocument.ts:3055).
 pub(crate) fn is_block_bookmark(block: &Js) -> Result<bool> {
-    Ok(is_raw_xml_c(block) && bookmark_kind(js_trim_start(block.get("xml").str_or_empty())).is_some())
+    Ok(is_raw_xml_c(block)
+        && bookmark_kind(js_trim_start(block.get("xml").str_or_empty())).is_some())
 }
 
 /// `containsBookmark` (src/yrs/yrsToDocument.ts:3059).
@@ -605,10 +684,18 @@ fn decode_entities(value: &str) -> String {
         if chars[i] == '&' {
             // `&#x([0-9a-fA-F]+);` | `&#([0-9]+);`
             if chars.get(i + 1) == Some(&'#') {
-                let (hex, start) = if chars.get(i + 2) == Some(&'x') { (true, i + 3) } else { (false, i + 2) };
+                let (hex, start) = if chars.get(i + 2) == Some(&'x') {
+                    (true, i + 3)
+                } else {
+                    (false, i + 2)
+                };
                 let mut j = start;
                 while j < chars.len()
-                    && (if hex { chars[j].is_ascii_hexdigit() } else { chars[j].is_ascii_digit() })
+                    && (if hex {
+                        chars[j].is_ascii_hexdigit()
+                    } else {
+                        chars[j].is_ascii_digit()
+                    })
                 {
                     j += 1;
                 }
@@ -629,7 +716,13 @@ fn decode_entities(value: &str) -> String {
                     continue;
                 }
             }
-            for (name, ch) in [("amp", '&'), ("lt", '<'), ("gt", '>'), ("quot", '"'), ("apos", '\'')] {
+            for (name, ch) in [
+                ("amp", '&'),
+                ("lt", '<'),
+                ("gt", '>'),
+                ("quot", '"'),
+                ("apos", '\''),
+            ] {
                 let n: Vec<char> = name.chars().collect();
                 let end = i + 1 + n.len();
                 if end < chars.len() && chars[i + 1..end] == n[..] && chars[end] == ';' {
@@ -724,8 +817,12 @@ fn tag_attributes(tag: &str) -> Vec<(String, String)> {
 
 fn raw_block_bookmark_parts(xml: &str) -> Result<Option<(&'static str, Option<String>)>> {
     let xml = js_trim_start(xml);
-    let Some(kind) = bookmark_kind(xml) else { return Ok(None) };
-    let Some(tag) = leading_tag(xml) else { throw!("Invalid block bookmark") };
+    let Some(kind) = bookmark_kind(xml) else {
+        return Ok(None);
+    };
+    let Some(tag) = leading_tag(xml) else {
+        throw!("Invalid block bookmark")
+    };
     let attributes: Vec<(String, String)> = tag_attributes(tag)
         .into_iter()
         .map(|(name, value)| (name, decode_entities(&value)))
@@ -787,8 +884,16 @@ fn story_block_keys_vec(blocks: &Js, story_id: &str) -> Vec<Option<String>> {
             let memo = projected_blocks_get(block);
             if type_is(block, "paragraph") {
                 let key = memo.and_then(|m| m.session_key).unwrap_or_else(|| {
-                    let pid = if !block.get("repeatedParaId").truthy() { block.get("paraId") } else { Js::Bool(false) };
-                    if pid.truthy() { key_of(&pid) } else { format!("{story_id}:p{paragraph}") }
+                    let pid = if !block.get("repeatedParaId").truthy() {
+                        block.get("paraId")
+                    } else {
+                        Js::Bool(false)
+                    };
+                    if pid.truthy() {
+                        key_of(&pid)
+                    } else {
+                        format!("{story_id}:p{paragraph}")
+                    }
                 });
                 paragraph += 1;
                 return Some(format!("P{key}"));
@@ -801,7 +906,9 @@ fn story_block_keys_vec(blocks: &Js, story_id: &str) -> Vec<Option<String>> {
                 return Some(format!("T{key}"));
             }
             if type_is(block, "blockSdt") {
-                let key = memo.and_then(|m| m.key).unwrap_or_else(|| format!("S{story_id}:sdt{sdt}"));
+                let key = memo
+                    .and_then(|m| m.key)
+                    .unwrap_or_else(|| format!("S{story_id}:sdt{sdt}"));
                 sdt += 1;
                 return Some(key);
             }
@@ -813,7 +920,10 @@ fn story_block_keys_vec(blocks: &Js, story_id: &str) -> Vec<Option<String>> {
 /// `storyBlockKeys` (src/yrs/yrsToDocument.ts:3110).
 pub(crate) fn story_block_keys(blocks: &Js, story_id: &str) -> Result<Js> {
     Ok(Js::new_arr(
-        story_block_keys_vec(blocks, story_id).into_iter().map(Js::from).collect(),
+        story_block_keys_vec(blocks, story_id)
+            .into_iter()
+            .map(Js::from)
+            .collect(),
     ))
 }
 
@@ -822,12 +932,21 @@ type Pair = (Option<f64>, Option<f64>);
 fn projected_bookmark_positions_map(blocks: &Js) -> Result<IndexMap<String, Pair>> {
     fn record(positions: &mut IndexMap<String, Pair>, kind: &str, id: String, position: f64) {
         let pair = positions.entry(id).or_insert((None, None));
-        let slot = if kind == "start" { &mut pair.0 } else { &mut pair.1 };
+        let slot = if kind == "start" {
+            &mut pair.0
+        } else {
+            &mut pair.1
+        };
         if slot.is_none() {
             *slot = Some(position);
         }
     }
-    fn visit(value: &Js, position: f64, visited: &mut HashSet<usize>, positions: &mut IndexMap<String, Pair>) -> Result<()> {
+    fn visit(
+        value: &Js,
+        position: f64,
+        visited: &mut HashSet<usize>,
+        positions: &mut IndexMap<String, Pair>,
+    ) -> Result<()> {
         if !value.is_object_like() {
             return Ok(());
         }
@@ -842,16 +961,21 @@ fn projected_bookmark_positions_map(blocks: &Js) -> Result<IndexMap<String, Pair
             return Ok(());
         }
         let ty = value.get("type");
-        let marker: Option<(&str, Option<String>)> = if ty.as_str() == Some("rawXml") && value.get("xml").is_str() {
-            raw_block_bookmark_parts(value.get("xml").str_or_empty())?
-        } else if ty.as_str() == Some("bookmarkStart") || ty.as_str() == Some("bookmarkEnd") {
-            Some((
-                if ty.as_str() == Some("bookmarkStart") { "start" } else { "end" },
-                Some(key_of(&value.get("id"))),
-            ))
-        } else {
-            None
-        };
+        let marker: Option<(&str, Option<String>)> =
+            if ty.as_str() == Some("rawXml") && value.get("xml").is_str() {
+                raw_block_bookmark_parts(value.get("xml").str_or_empty())?
+            } else if ty.as_str() == Some("bookmarkStart") || ty.as_str() == Some("bookmarkEnd") {
+                Some((
+                    if ty.as_str() == Some("bookmarkStart") {
+                        "start"
+                    } else {
+                        "end"
+                    },
+                    Some(key_of(&value.get("id"))),
+                ))
+            } else {
+                None
+            };
         if let Some((kind, Some(id))) = marker {
             record(positions, kind, id, position);
             return Ok(());
@@ -922,7 +1046,10 @@ pub(crate) fn restore_block_bookmarks(projected: &Js, base: &Js, story_id: &str)
     }
     let keys = story_block_keys_vec(base, story_id);
     let mut live: HashMap<String, usize> = HashMap::new();
-    for (index, key) in story_block_keys_vec(projected, story_id).into_iter().enumerate() {
+    for (index, key) in story_block_keys_vec(projected, story_id)
+        .into_iter()
+        .enumerate()
+    {
         if let Some(key) = key {
             live.insert(key, index);
         }
@@ -949,13 +1076,23 @@ pub(crate) fn restore_block_bookmarks(projected: &Js, base: &Js, story_id: &str)
         if let Some((kind, id)) = marker {
             let id = id.unwrap_or_else(|| format!("\0{index}"));
             let pair = pairs.entry(id.clone()).or_insert((None, None));
-            let slot = if kind == "start" { &mut pair.0 } else { &mut pair.1 };
+            let slot = if kind == "start" {
+                &mut pair.0
+            } else {
+                &mut pair.1
+            };
             if slot.is_some() {
                 throw!("Duplicate block bookmark {kind} for id {id}");
             }
             let existing = present.get(&id);
             let omit = match existing {
-                Some((s, e)) => if kind == "start" { s.is_some() } else { e.is_some() },
+                Some((s, e)) => {
+                    if kind == "start" {
+                        s.is_some()
+                    } else {
+                        e.is_some()
+                    }
+                }
                 None => false,
             };
             let position = match next_positions[index] {
@@ -966,7 +1103,13 @@ pub(crate) fn restore_block_bookmarks(projected: &Js, base: &Js, story_id: &str)
                 },
             };
             *slot = Some(boundaries.len());
-            boundaries.push(Placement { block: block.clone(), index, position, omit, following: None });
+            boundaries.push(Placement {
+                block: block.clone(),
+                index,
+                position,
+                omit,
+                following: None,
+            });
         }
         if let Some(position) = keys[index].as_ref().and_then(|k| live.get(k)) {
             previous = Some(*position);
@@ -992,7 +1135,8 @@ pub(crate) fn restore_block_bookmarks(projected: &Js, base: &Js, story_id: &str)
             let (sb, eb) = (&boundaries[*s], &boundaries[*e]);
             if !sb.omit
                 && !eb.omit
-                && (eb.position < sb.position || (eb.position == sb.position && eb.index < sb.index))
+                && (eb.position < sb.position
+                    || (eb.position == sb.position && eb.index < sb.index))
             {
                 let end_block = eb.block.clone();
                 boundaries[*s].following = Some(end_block);
@@ -1057,7 +1201,11 @@ pub(crate) fn restore_text_box_bookmarks(content: &Js, base: &Js) -> Result<()> 
     for (id, copies) in bodies(content) {
         for (index, body) in copies.iter().enumerate() {
             if let Some(source) = sources.get(&id).and_then(|s| s.get(index)) {
-                let restored = restore_block_bookmarks(&body.get("content"), &source.get("content"), &format!("txbx:{id}"))?;
+                let restored = restore_block_bookmarks(
+                    &body.get("content"),
+                    &source.get("content"),
+                    &format!("txbx:{id}"),
+                )?;
                 body.set("content", restored);
             }
         }
@@ -1080,14 +1228,16 @@ pub(crate) fn restore_raw_blocks(projected: &Js, base: &Js, story_id: &str) -> R
             type_is(candidate, "paragraph")
                 && candidate.get("paraId").truthy()
                 && current.iter().any(|entry| {
-                    type_is(entry, "paragraph") && entry.get("paraId").strict_eq(&candidate.get("paraId"))
+                    type_is(entry, "paragraph")
+                        && entry.get("paraId").strict_eq(&candidate.get("paraId"))
                 })
         });
         let anchor: i64 = match following {
             Some(following) if type_is(following, "paragraph") => current
                 .iter()
                 .position(|entry| {
-                    type_is(entry, "paragraph") && entry.get("paraId").strict_eq(&following.get("paraId"))
+                    type_is(entry, "paragraph")
+                        && entry.get("paraId").strict_eq(&following.get("paraId"))
                 })
                 .map_or(-1, |p| p as i64),
             _ => -1,
@@ -1112,7 +1262,11 @@ pub(crate) fn restore_raw_blocks(projected: &Js, base: &Js, story_id: &str) -> R
 pub(crate) fn clone_projected_paragraph(paragraph: &Js, changes: &Js, identity: &Js) -> Result<Js> {
     let clone = paragraph.spread();
     clone.assign(changes);
-    let identity = if identity.is_undefined() { paragraph } else { identity };
+    let identity = if identity.is_undefined() {
+        paragraph
+    } else {
+        identity
+    };
     if let Some(memo) = projected_blocks_get(identity) {
         if memo.session_key.as_deref().map_or(false, |k| !k.is_empty()) {
             projected_blocks_set(
@@ -1135,7 +1289,11 @@ pub(crate) fn projected_session_key(paragraph: &Js) -> Result<Option<String>> {
 
 /// `carryParagraphIdentities` (src/yrs/yrsToDocument.ts:3363).
 pub(crate) fn carry_paragraph_identities(replacement: &Js, replaced: &Js) -> Result<Js> {
-    let previous: Vec<Js> = replaced.items().into_iter().filter(|b| type_is(b, "paragraph")).collect();
+    let previous: Vec<Js> = replaced
+        .items()
+        .into_iter()
+        .filter(|b| type_is(b, "paragraph"))
+        .collect();
     let mut index = 0;
     let mut out = Vec::new();
     for block in replacement.items() {
@@ -1147,7 +1305,11 @@ pub(crate) fn carry_paragraph_identities(replacement: &Js, replaced: &Js) -> Res
         index += 1;
         match source {
             Some(source) if source.get("paraId").truthy() => {
-                out.push(clone_projected_paragraph(&block, &obj! { "paraId" => source.get("paraId") }, &source)?);
+                out.push(clone_projected_paragraph(
+                    &block,
+                    &obj! { "paraId" => source.get("paraId") },
+                    &source,
+                )?);
             }
             _ => out.push(block),
         }
@@ -1160,7 +1322,11 @@ pub(crate) fn own_projected_paragraphs(blocks: &Js) -> Result<Js> {
     let mut out = Vec::new();
     for block in blocks.items() {
         if type_is(&block, "paragraph") {
-            out.push(clone_projected_paragraph(&block, &Js::Undefined, &Js::Undefined)?);
+            out.push(clone_projected_paragraph(
+                &block,
+                &Js::Undefined,
+                &Js::Undefined,
+            )?);
             continue;
         }
         if !type_is(&block, "table") {
@@ -1171,7 +1337,9 @@ pub(crate) fn own_projected_paragraphs(blocks: &Js) -> Result<Js> {
         for row in block.get("rows").items() {
             let mut cells = Vec::new();
             for cell in row.get("cells").items() {
-                cells.push(cell.with(&[("content", own_projected_paragraphs(&cell.get("content"))?)]));
+                cells.push(
+                    cell.with(&[("content", own_projected_paragraphs(&cell.get("content"))?)]),
+                );
             }
             rows.push(row.with(&[("cells", Js::new_arr(cells))]));
         }
@@ -1223,10 +1391,14 @@ fn same_json_c(a: &Js, b: &Js) -> bool {
         let (x, y) = (a.items(), b.items());
         return x.len() == y.len() && x.iter().zip(y.iter()).all(|(l, r)| same_json_c(l, r));
     }
-    let (Some(left), Some(right)) = (as_obj_c(a), as_obj_c(b)) else { return false };
+    let (Some(left), Some(right)) = (as_obj_c(a), as_obj_c(b)) else {
+        return false;
+    };
     let keys = left.keys();
     keys.len() == right.keys().len()
-        && keys.iter().all(|key| right.has(key) && same_json_c(&left.get(key), &right.get(key)))
+        && keys
+            .iter()
+            .all(|key| right.has(key) && same_json_c(&left.get(key), &right.get(key)))
 }
 
 // ----- block breaks -----
@@ -1240,7 +1412,8 @@ fn block_break_kind_c(embed_kind: &Js) -> Option<&'static str> {
 }
 
 fn is_block_break_c(item: &Js) -> bool {
-    item.get("kind").as_str() == Some("embed") && block_break_kind_c(&item.get("embedKind")).is_some()
+    item.get("kind").as_str() == Some("embed")
+        && block_break_kind_c(&item.get("embedKind")).is_some()
 }
 
 /// `isBlockBreak` (src/yrs/yrsToDocument.ts:3441).
@@ -1260,9 +1433,16 @@ pub(crate) fn block_break_kind(embed_kind: &str) -> Result<Js> {
 pub(crate) fn run_flow_tokens(run: &Js, tokens: &Js) -> Result<()> {
     for content in run.get("content").items() {
         let break_type = content.get("breakType");
-        if type_is(&content, "break") && matches!(break_type.as_str(), Some("page") | Some("column")) {
+        if type_is(&content, "break")
+            && matches!(break_type.as_str(), Some("page") | Some("column"))
+        {
             tokens.push(break_type);
-        } else if !type_is(&content, "text") || content.get("text").as_str().map_or(false, |t| js::len16(t) > 0) {
+        } else if !type_is(&content, "text")
+            || content
+                .get("text")
+                .as_str()
+                .map_or(false, |t| js::len16(t) > 0)
+        {
             tokens.push("visible");
         }
     }
@@ -1271,7 +1451,11 @@ pub(crate) fn run_flow_tokens(run: &Js, tokens: &Js) -> Result<()> {
 
 /// `flowTokens` (src/yrs/yrsToDocument.ts:3460). `tokens` may be undefined.
 pub(crate) fn flow_tokens(content: &Js, tokens: &Js) -> Result<Js> {
-    let tokens = if tokens.is_undefined() { Js::new_arr(Vec::new()) } else { tokens.clone() };
+    let tokens = if tokens.is_undefined() {
+        Js::new_arr(Vec::new())
+    } else {
+        tokens.clone()
+    };
     for item in content.items() {
         match item.get("type").as_str() {
             Some("run") => run_flow_tokens(&item, &tokens)?,
@@ -1290,7 +1474,12 @@ pub(crate) fn flow_tokens(content: &Js, tokens: &Js) -> Result<Js> {
                 }
             }
             Some("complexField") => {
-                for child in item.get("fieldCode").items().into_iter().chain(item.get("fieldResult").items()) {
+                for child in item
+                    .get("fieldCode")
+                    .items()
+                    .into_iter()
+                    .chain(item.get("fieldResult").items())
+                {
                     run_flow_tokens(&child, &tokens)?;
                 }
             }
@@ -1312,22 +1501,35 @@ pub(crate) fn flow_tokens(content: &Js, tokens: &Js) -> Result<Js> {
 }
 
 fn flow_token_vec(paragraph: &Js) -> Result<Vec<String>> {
-    Ok(arr_strings(&flow_tokens(&paragraph.get("content"), &Js::Undefined)?))
+    Ok(arr_strings(&flow_tokens(
+        &paragraph.get("content"),
+        &Js::Undefined,
+    )?))
 }
 
 fn leading_block_breaks_vec(paragraph: &Js) -> Result<Vec<String>> {
     let tokens = flow_token_vec(paragraph)?;
     if !tokens.iter().any(|t| t == "visible") {
-        let last = tokens.iter().rposition(|t| t == "column").map_or(0, |p| p + 1);
+        let last = tokens
+            .iter()
+            .rposition(|t| t == "column")
+            .map_or(0, |p| p + 1);
         return Ok(tokens[..last].to_vec());
     }
-    Ok(if tokens.first().map(String::as_str) == Some("column") { vec!["column".into()] } else { vec![] })
+    Ok(if tokens.first().map(String::as_str) == Some("column") {
+        vec!["column".into()]
+    } else {
+        vec![]
+    })
 }
 
 fn trailing_block_breaks_vec(paragraph: &Js) -> Result<Vec<String>> {
     let tokens = flow_token_vec(paragraph)?;
     if !tokens.iter().any(|t| t == "visible") {
-        let from = tokens.iter().rposition(|t| t == "column").map_or(0, |p| p + 1);
+        let from = tokens
+            .iter()
+            .rposition(|t| t == "column")
+            .map_or(0, |p| p + 1);
         return Ok(tokens[from..].to_vec());
     }
     let mut trailing = Vec::new();
@@ -1415,17 +1617,35 @@ fn story_set_has(set: &Js, story: &str) -> bool {
 
 /// `yrsToDocument` (src/yrs/yrsToDocument.ts:4243).
 pub(crate) fn yrs_to_document(session: &Session, base: &Js, options: &Js) -> Result<Js> {
-    let options = if options.is_nullish() { Js::new_obj() } else { options.clone() };
+    let options = if options.is_nullish() {
+        Js::new_obj()
+    } else {
+        options.clone()
+    };
     project_document(session, base, &options, &Js::Undefined)
 }
 
 /// `yrsBodyToDocumentWithRevisionIds` (src/yrs/yrsToDocument.ts:4255).
-pub(crate) fn yrs_body_to_document_with_revision_ids(session: &Session, base: &Js, revision_ids: &Js) -> Result<Js> {
-    project_document(session, base, &obj! { "storyIds" => arr!["body"] }, revision_ids)
+pub(crate) fn yrs_body_to_document_with_revision_ids(
+    session: &Session,
+    base: &Js,
+    revision_ids: &Js,
+) -> Result<Js> {
+    project_document(
+        session,
+        base,
+        &obj! { "storyIds" => arr!["body"] },
+        revision_ids,
+    )
 }
 
 /// `projectDocument` (src/yrs/yrsToDocument.ts:4263).
-pub(crate) fn project_document(session: &Session, base: &Js, options: &Js, revision_ids: &Js) -> Result<Js> {
+pub(crate) fn project_document(
+    session: &Session,
+    base: &Js,
+    options: &Js,
+    revision_ids: &Js,
+) -> Result<Js> {
     let _media = project_media_with(session);
     let result = (|| {
         let context = SaveContext::new(session, base, &options.get("commentIds"), revision_ids)?;
@@ -1461,7 +1681,12 @@ pub(crate) fn with_host_section_changes(authored: &Js, source: &Js, host: &Js) -
 }
 
 /// `projectStories` (src/yrs/yrsToDocument.ts:4292).
-pub(crate) fn project_stories(context: &crate::yrs_to_document::SaveContext, session: &Session, base: &Js, options: &Js) -> Result<Js> {
+pub(crate) fn project_stories(
+    context: &crate::yrs_to_document::SaveContext,
+    session: &Session,
+    base: &Js,
+    options: &Js,
+) -> Result<Js> {
     let story_ids = options_story_ids(options);
     let should_project = |story_id: &str| -> bool {
         match &story_ids {
@@ -1477,13 +1702,19 @@ pub(crate) fn project_stories(context: &crate::yrs_to_document::SaveContext, ses
     };
 
     let mut selected_header_footer_stories: HashSet<String> = HashSet::new();
-    for r_id in package.get("headers").map_keys().into_iter().chain(package.get("footers").map_keys()) {
+    for r_id in package
+        .get("headers")
+        .map_keys()
+        .into_iter()
+        .chain(package.get("footers").map_keys())
+    {
         if should_project(&format!("hf:{r_id}")) {
             selected_header_footer_stories.insert(session.header_footer_story(&r_id));
         }
     }
-    let should_project_header_footer =
-        |story_id: &str| -> bool { should_project(story_id) || selected_header_footer_stories.contains(story_id) };
+    let should_project_header_footer = |story_id: &str| -> bool {
+        should_project(story_id) || selected_header_footer_stories.contains(story_id)
+    };
 
     let header_footer_contents: RefCell<HashMap<String, Js>> = RefCell::new(HashMap::new());
     let project_header_footer = |story_id: &str| -> Result<Js> {
@@ -1493,7 +1724,9 @@ pub(crate) fn project_stories(context: &crate::yrs_to_document::SaveContext, ses
             }
         }
         let content = context.story_to_blocks(story_id)?;
-        header_footer_contents.borrow_mut().insert(story_id.to_owned(), content.clone());
+        header_footer_contents
+            .borrow_mut()
+            .insert(story_id.to_owned(), content.clone());
         Ok(content)
     };
     let canonical_for = |r_id: &str, story_id: &str| -> Option<String> {
@@ -1515,7 +1748,10 @@ pub(crate) fn project_stories(context: &crate::yrs_to_document::SaveContext, ses
                 (r_id, part, story)
             })
             .collect();
-        let project = story_ids.is_none() || routes.iter().any(|(_, _, s)| should_project_header_footer(s));
+        let project = story_ids.is_none()
+            || routes
+                .iter()
+                .any(|(_, _, s)| should_project_header_footer(s));
         let mut remark = false;
         for (r_id, part, story_id) in &routes {
             if header_footer_alias_of(part)? != canonical_for(r_id, story_id) {
@@ -1529,7 +1765,9 @@ pub(crate) fn project_stories(context: &crate::yrs_to_document::SaveContext, ses
         let mut out = Vec::new();
         for (r_id, part, story_id) in routes {
             let canonical = canonical_for(&r_id, &story_id);
-            let next = if context.story_ids.contains(&story_id) && should_project_header_footer(&story_id) {
+            let next = if context.story_ids.contains(&story_id)
+                && should_project_header_footer(&story_id)
+            {
                 part.with(&[("content", project_header_footer(&story_id)?)])
             } else if header_footer_alias_of(&part)? == canonical {
                 part.clone()
@@ -1560,7 +1798,8 @@ pub(crate) fn project_stories(context: &crate::yrs_to_document::SaveContext, ses
         for note in notes.items() {
             let story_id = format!("{prefix}{}", key_of(&note.get("id")));
             if context.story_ids.contains(&story_id) && should_project(&story_id) {
-                let content = restore_note_marks(&context.story_to_blocks(&story_id)?, &note.get("content"))?;
+                let content =
+                    restore_note_marks(&context.story_to_blocks(&story_id)?, &note.get("content"))?;
                 out.push(note.with(&[("content", content), ("verbatimXml", Js::Undefined)]));
             } else {
                 out.push(note);
@@ -1574,7 +1813,11 @@ pub(crate) fn project_stories(context: &crate::yrs_to_document::SaveContext, ses
     let base_comments = package.path(&["document", "comments"]);
     let mut has_bookmarked = false;
     for comment in base_comments.items() {
-        if contains_bookmark(&comment.get("blockContent").nullish_or(Js::new_arr(Vec::new())))? {
+        if contains_bookmark(
+            &comment
+                .get("blockContent")
+                .nullish_or(Js::new_arr(Vec::new())),
+        )? {
             has_bookmarked = true;
             break;
         }
@@ -1595,18 +1838,30 @@ pub(crate) fn project_stories(context: &crate::yrs_to_document::SaveContext, ses
         Some(comment_bodies) if base_comments.is_arr() => {
             let mut out = Vec::new();
             for comment in base_comments.items() {
-                if !contains_bookmark(&comment.get("blockContent").nullish_or(Js::new_arr(Vec::new())))? {
+                if !contains_bookmark(
+                    &comment
+                        .get("blockContent")
+                        .nullish_or(Js::new_arr(Vec::new())),
+                )? {
                     out.push(comment);
                     continue;
                 }
-                let body = comment_bodies.get(&key_of(&comment.get("id"))).cloned().unwrap_or_default();
-                let original = comment.get("blockContent").nullish_or(comment.get("content"));
+                let body = comment_bodies
+                    .get(&key_of(&comment.get("id")))
+                    .cloned()
+                    .unwrap_or_default();
+                let original = comment
+                    .get("blockContent")
+                    .nullish_or(comment.get("content"));
                 let valid = body.is_arr()
                     && body.items().iter().all(|block| {
                         block.truthy()
                             && matches!(
                                 block.get("type").as_str(),
-                                Some("paragraph") | Some("table") | Some("blockSdt") | Some("rawXml")
+                                Some("paragraph")
+                                    | Some("table")
+                                    | Some("blockSdt")
+                                    | Some("rawXml")
                             )
                     });
                 if !valid || same_json_c(&body, &original) {
@@ -1614,10 +1869,17 @@ pub(crate) fn project_stories(context: &crate::yrs_to_document::SaveContext, ses
                     continue;
                 }
                 assert_comment_bookmark_replacement(&original)?;
-                let block_content =
-                    restore_block_bookmarks(&body, &original, &format!("comment:{}", key_of(&comment.get("id"))))?;
+                let block_content = restore_block_bookmarks(
+                    &body,
+                    &original,
+                    &format!("comment:{}", key_of(&comment.get("id"))),
+                )?;
                 let content = Js::new_arr(
-                    block_content.items().into_iter().filter(|b| type_is(b, "paragraph")).collect(),
+                    block_content
+                        .items()
+                        .into_iter()
+                        .filter(|b| type_is(b, "paragraph"))
+                        .collect(),
                 );
                 out.push(comment.with(&[("content", content), ("blockContent", block_content)]));
             }
@@ -1640,9 +1902,16 @@ pub(crate) fn project_stories(context: &crate::yrs_to_document::SaveContext, ses
         None => Js::Undefined,
     };
     let sections = live_sections.items();
-    let source_final_or_empty = if source_final.is_nullish() { Js::new_obj() } else { source_final.clone() };
+    let source_final_or_empty = if source_final.is_nullish() {
+        Js::new_obj()
+    } else {
+        source_final.clone()
+    };
     let final_section_changes = !sections.is_empty()
-        && !section_properties_equal(&source_final_or_empty, &sections.last().unwrap().get("authored"))?;
+        && !section_properties_equal(
+            &source_final_or_empty,
+            &sections.last().unwrap().get("authored"),
+        )?;
     let mut section_changes = final_section_changes;
     if !section_changes && !sections.is_empty() {
         for section in &sections[..sections.len() - 1] {
@@ -1690,7 +1959,10 @@ pub(crate) fn project_stories(context: &crate::yrs_to_document::SaveContext, ses
     let result = base.spread();
     let warnings = context.warnings.clone();
     if warnings.len() > 0 {
-        let mut all = base.get("warnings").nullish_or(Js::new_arr(Vec::new())).items();
+        let mut all = base
+            .get("warnings")
+            .nullish_or(Js::new_arr(Vec::new()))
+            .items();
         all.extend(warnings.items());
         result.set("warnings", Js::new_arr(all));
     }
@@ -1704,10 +1976,18 @@ pub(crate) fn project_stories(context: &crate::yrs_to_document::SaveContext, ses
     }
     if final_section_changes {
         let host_final = package.path(&["document", "finalSectionProperties"]);
-        let host_final = if host_final.is_nullish() { Js::new_obj() } else { host_final };
+        let host_final = if host_final.is_nullish() {
+            Js::new_obj()
+        } else {
+            host_final
+        };
         document.set(
             "finalSectionProperties",
-            with_host_section_changes(&sections.last().unwrap().get("authored"), &source_final_or_empty, &host_final)?,
+            with_host_section_changes(
+                &sections.last().unwrap().get("authored"),
+                &source_final_or_empty,
+                &host_final,
+            )?,
         );
     }
     let out_package = package.spread();
@@ -1779,7 +2059,12 @@ impl<'a> SaveContext<'a> {
     }
 
     /// `SaveContext.constructor` (src/yrs/yrsToDocument.ts:3559).
-    pub(crate) fn new(session: &'a Session<'a>, base: &Js, comment_ids: &Js, revision_ids: &Js) -> Result<Self> {
+    pub(crate) fn new(
+        session: &'a Session<'a>,
+        base: &Js,
+        comment_ids: &Js,
+        revision_ids: &Js,
+    ) -> Result<Self> {
         let story_ids: HashSet<String> = session.story_ids().into_iter().collect();
         let base_stories = collect_base_stories_map(session, base)?;
         let mut source_tables = HashMap::new();
@@ -1822,16 +2107,21 @@ impl<'a> SaveContext<'a> {
         }
         let style_list = package.path(&["styles", "styles"]).items();
         let has_comment_reference_style = style_list.iter().any(|style| {
-            style.get("styleId").as_str() == Some("CommentReference") && style.get("type").as_str() == Some("character")
+            style.get("styleId").as_str() == Some("CommentReference")
+                && style.get("type").as_str() == Some("character")
         });
-        let comments = comment_ranges_map(session, &package.path(&["document", "comments"]), comment_ids)?;
+        let comments = comment_ranges_map(
+            session,
+            &package.path(&["document", "comments"]),
+            comment_ids,
+        )?;
         let memo = session_projection_memo(session)?;
         let style_definitions = package.get("styles");
         let font_scheme = package.path(&["theme", "fontScheme"]);
         let styles = create_style_resolver(&package.get("styles"))?;
         let default_style = styles.get_default_paragraph_style()?;
-        let synthetic_defaults =
-            !default_style.is_undefined() && !style_list.iter().any(|s| s.strict_eq(&default_style));
+        let synthetic_defaults = !default_style.is_undefined()
+            && !style_list.iter().any(|s| s.strict_eq(&default_style));
         let mut subtree_comments: IndexMap<String, IndexMap<String, Js>> = IndexMap::new();
         for (story, ranges) in &comments {
             let mut seen: HashSet<String> = HashSet::new();
@@ -1901,7 +2191,9 @@ impl<'a> SaveContext<'a> {
     pub(crate) fn inheritance(&self) -> Result<Rc<Inheritance>> {
         let mut slot = self.run_inheritance.borrow_mut();
         if slot.is_none() {
-            *slot = Some(Rc::new(self.session.run_inheritance(&self.style_definitions)));
+            *slot = Some(Rc::new(
+                self.session.run_inheritance(&self.style_definitions),
+            ));
         }
         Ok(slot.as_ref().unwrap().clone())
     }
@@ -1914,7 +2206,11 @@ impl<'a> SaveContext<'a> {
                 .iter()
                 .flat_map(|row| {
                     let cells = row.get("cells");
-                    if cells.is_arr() { cells.items() } else { Vec::new() }
+                    if cells.is_arr() {
+                        cells.items()
+                    } else {
+                        Vec::new()
+                    }
                 })
                 .collect()
         } else {
@@ -1923,7 +2219,8 @@ impl<'a> SaveContext<'a> {
         let mut source: Option<(String, Js)> = None;
         if payload.path(&["tblPr", "_originalFormatting"]).truthy() {
             for cell in &cells {
-                let story = as_str_c(&cell.path(&["tcPr", "_sourceCellStory"])).or_else(|| as_str_c(&cell.get("story")));
+                let story = as_str_c(&cell.path(&["tcPr", "_sourceCellStory"]))
+                    .or_else(|| as_str_c(&cell.get("story")));
                 let prefix = story.as_deref().and_then(table_prefix_of);
                 if let Some(prefix) = prefix.filter(|p| !p.is_empty()) {
                     if let Some(table) = self.source_tables.get(&prefix) {
@@ -1937,15 +2234,22 @@ impl<'a> SaveContext<'a> {
         }
         if let Some((prefix, table)) = source {
             let ptr = table.ptr().unwrap_or(0);
-            let existing = self.table_baselines.borrow().get(&ptr).map(|(_, b)| b.clone());
+            let existing = self
+                .table_baselines
+                .borrow()
+                .get(&ptr)
+                .map(|(_, b)| b.clone());
             let baseline = match existing {
                 Some(b) => b,
                 None => {
-                    let baseline = match projected_blocks_get(&table).and_then(|m| m.table_baseline) {
+                    let baseline = match projected_blocks_get(&table).and_then(|m| m.table_baseline)
+                    {
                         Some(b) if !b.is_nullish() => b,
                         _ => self.inheritance()?.table_attributes(&table),
                     };
-                    self.table_baselines.borrow_mut().insert(ptr, (table.clone(), baseline.clone()));
+                    self.table_baselines
+                        .borrow_mut()
+                        .insert(ptr, (table.clone(), baseline.clone()));
                     baseline
                 }
             };
@@ -1953,7 +2257,11 @@ impl<'a> SaveContext<'a> {
             let has_memo_baseline = projected_blocks_get(&table)
                 .and_then(|m| m.table_baseline)
                 .map_or(false, |b| b.truthy());
-            let recorded = if has_memo_baseline { None } else { projected_table_cells_get(&table) };
+            let recorded = if has_memo_baseline {
+                None
+            } else {
+                projected_table_cells_get(&table)
+            };
             if let Some(recorded) = recorded {
                 let seeded = seeded_cell_indices(&table)?;
                 for (row_index, row) in recorded.items().iter().enumerate() {
@@ -1975,7 +2283,9 @@ impl<'a> SaveContext<'a> {
                         };
                         if let Some(entry) = entry.as_str() {
                             if cell.truthy() {
-                                self.source_cells.borrow_mut().insert(entry.to_owned(), cell);
+                                self.source_cells
+                                    .borrow_mut()
+                                    .insert(entry.to_owned(), cell);
                             }
                         }
                     }
@@ -1991,15 +2301,24 @@ impl<'a> SaveContext<'a> {
             }
         }
         for cell in &cells {
-            let Some(story) = cell.get("story").as_str().map(str::to_owned) else { continue };
+            let Some(story) = cell.get("story").as_str().map(str::to_owned) else {
+                continue;
+            };
             self.memo.get("parents").map_set(&story, parent);
-            let source = as_str_c(&cell.path(&["tcPr", "_sourceCellStory"])).unwrap_or_else(|| story.clone());
-            let source_cell = self.source_cells.borrow().get(&source).cloned().unwrap_or_default();
+            let source = as_str_c(&cell.path(&["tcPr", "_sourceCellStory"]))
+                .unwrap_or_else(|| story.clone());
+            let source_cell = self
+                .source_cells
+                .borrow()
+                .get(&source)
+                .cloned()
+                .unwrap_or_default();
             let pf = source_cell.get("paragraphFormatting");
             let rf = source_cell.get("runFormatting");
-            self.cell_paragraphs
-                .borrow_mut()
-                .insert(story.clone(), if pf.is_nullish() { Js::Undefined } else { pf });
+            self.cell_paragraphs.borrow_mut().insert(
+                story.clone(),
+                if pf.is_nullish() { Js::Undefined } else { pf },
+            );
             self.cell_runs
                 .borrow_mut()
                 .insert(story, if rf.is_nullish() { Js::Undefined } else { rf });
@@ -2011,7 +2330,10 @@ impl<'a> SaveContext<'a> {
     pub(crate) fn apply_table_baseline(&self, payload: &Js, attrs: &Js) -> Result<()> {
         if let Some(baseline) = self.payload_baselines.get(payload) {
             if baseline.truthy() {
-                attrs.set("_originalResolvedMargins", baseline.path(&["attributes", "cellMargins"]));
+                attrs.set(
+                    "_originalResolvedMargins",
+                    baseline.path(&["attributes", "cellMargins"]),
+                );
             }
         }
         Ok(())
@@ -2027,12 +2349,23 @@ impl<'a> SaveContext<'a> {
         let origin = as_str_c(&payload.path(&["tcPr", "_sourceCellStory"]));
         let source = origin.clone().or_else(|| as_str_c(&payload.get("story")));
         let baseline = match &source {
-            Some(source) => self.source_cells.borrow().get(source).cloned().unwrap_or_default(),
+            Some(source) => self
+                .source_cells
+                .borrow()
+                .get(source)
+                .cloned()
+                .unwrap_or_default(),
             None => Js::Undefined,
         };
         if baseline.truthy() {
-            attrs.set("_originalResolvedBorders", baseline.path(&["attributes", "borders"]));
-            attrs.set("_originalResolvedMargins", baseline.path(&["attributes", "margins"]));
+            attrs.set(
+                "_originalResolvedBorders",
+                baseline.path(&["attributes", "borders"]),
+            );
+            attrs.set(
+                "_originalResolvedMargins",
+                baseline.path(&["attributes", "margins"]),
+            );
             let original = as_obj_c(&baseline.path(&["attributes", "_originalFormatting"]));
             if let (Some(origin), Some(original)) = (&origin, original) {
                 if !origin.is_empty() && !attrs.get("_originalFormatting").truthy() {
@@ -2050,15 +2383,25 @@ impl<'a> SaveContext<'a> {
     pub(crate) fn cell_contents(&self, payload: &Js, parent: &str) -> Result<Js> {
         let mut contents = Vec::new();
         let rows = payload.get("rows");
-        for row in if rows.is_arr() { rows.items() } else { Vec::new() } {
+        for row in if rows.is_arr() {
+            rows.items()
+        } else {
+            Vec::new()
+        } {
             let cells = row.get("cells");
-            for cell in if cells.is_arr() { cells.items() } else { Vec::new() } {
+            for cell in if cells.is_arr() {
+                cells.items()
+            } else {
+                Vec::new()
+            } {
                 let story = cell.get("story");
                 if !story.is_undefined() {
                     self.memo.get("parents").map_set(&key_of(&story), parent);
                 }
                 match story.as_str() {
-                    Some(story) if self.story_ids.contains(story) => contents.push(self.story_to_blocks(story)?),
+                    Some(story) if self.story_ids.contains(story) => {
+                        contents.push(self.story_to_blocks(story)?)
+                    }
                     _ => contents.push(empty_blocks()),
                 }
             }
@@ -2108,7 +2451,10 @@ impl<'a> SaveContext<'a> {
                 }
                 id = self.comment_parents.get(&current).map(key_of);
             }
-            let source_formatting = source.as_ref().map(|s| s.get("formatting")).unwrap_or_default();
+            let source_formatting = source
+                .as_ref()
+                .map(|s| s.get("formatting"))
+                .unwrap_or_default();
             let formatting = if self.has_comment_reference_style {
                 source_formatting.with(&[("styleId", Js::from("CommentReference"))])
             } else {
@@ -2136,49 +2482,74 @@ impl<'a> SaveContext<'a> {
         }
         let numbered = !properties.get("numPr").is_nullish();
         let style = properties.get("pStyle").as_str().unwrap_or("").to_owned();
-        let table_formatting = self.cell_paragraphs.borrow().get(story_id).cloned().unwrap_or_default();
+        let table_formatting = self
+            .cell_paragraphs
+            .borrow()
+            .get(story_id)
+            .cloned()
+            .unwrap_or_default();
         let key = if cell {
-            arr![style.as_str(), table_formatting.clone(), numbered].stringify().unwrap_or_default()
+            arr![style.as_str(), table_formatting.clone(), numbered]
+                .stringify()
+                .unwrap_or_default()
         } else {
-            arr![style.as_str(), numbered, nested].stringify().unwrap_or_default()
+            arr![style.as_str(), numbered, nested]
+                .stringify()
+                .unwrap_or_default()
         };
         if !self.inherited.borrow().contains_key(&key) {
-            let style_opt = if style.is_empty() { None } else { Some(style.as_str()) };
+            let style_opt = if style.is_empty() {
+                None
+            } else {
+                Some(style.as_str())
+            };
             let resolved = if cell {
-                self.inheritance()?.paragraph_formatting(style_opt, &table_formatting)
+                self.inheritance()?
+                    .paragraph_formatting(style_opt, &table_formatting)
             } else {
                 self.styles
                     .resolve_paragraph_style(style_opt, &Js::Undefined, &Js::Undefined)?
                     .get("paragraphFormatting")
             };
-            let value = if resolved.is_undefined() || (!numbered && !resolved.get("numPr").is_nullish()) {
-                Js::Undefined
-            } else if numbered || nested {
-                let formatting = Js::new_obj();
-                if !resolved.get("autoSpaceDE").is_undefined() {
-                    formatting.set("autoSpaceDE", resolved.get("autoSpaceDE"));
-                }
-                if !resolved.get("autoSpaceDN").is_undefined() {
-                    formatting.set("autoSpaceDN", resolved.get("autoSpaceDN"));
-                }
-                if !resolved.get("adjustRightInd").is_undefined() {
-                    formatting.set("adjustRightInd", resolved.get("adjustRightInd"));
-                }
-                formatting
-            } else {
-                let formatting = resolved.spread();
-                formatting.delete("indentLeft");
-                formatting.delete("indentRight");
-                formatting
-            };
+            let value =
+                if resolved.is_undefined() || (!numbered && !resolved.get("numPr").is_nullish()) {
+                    Js::Undefined
+                } else if numbered || nested {
+                    let formatting = Js::new_obj();
+                    if !resolved.get("autoSpaceDE").is_undefined() {
+                        formatting.set("autoSpaceDE", resolved.get("autoSpaceDE"));
+                    }
+                    if !resolved.get("autoSpaceDN").is_undefined() {
+                        formatting.set("autoSpaceDN", resolved.get("autoSpaceDN"));
+                    }
+                    if !resolved.get("adjustRightInd").is_undefined() {
+                        formatting.set("adjustRightInd", resolved.get("adjustRightInd"));
+                    }
+                    formatting
+                } else {
+                    let formatting = resolved.spread();
+                    formatting.delete("indentLeft");
+                    formatting.delete("indentRight");
+                    formatting
+                };
             self.inherited.borrow_mut().insert(key.clone(), value);
         }
-        Ok(self.inherited.borrow().get(&key).cloned().unwrap_or_default())
+        Ok(self
+            .inherited
+            .borrow()
+            .get(&key)
+            .cloned()
+            .unwrap_or_default())
     }
 
     fn fonts_key(&self, fonts: &Js) -> Result<Js> {
         let mut out = Vec::new();
-        for (name, r#ref) in [("ascii", "asciiTheme"), ("hAnsi", "hAnsiTheme"), ("eastAsia", "eastAsiaTheme"), ("cs", "csTheme")] {
+        for (name, r#ref) in [
+            ("ascii", "asciiTheme"),
+            ("hAnsi", "hAnsiTheme"),
+            ("eastAsia", "eastAsiaTheme"),
+            ("cs", "csTheme"),
+        ] {
             out.push(canonical_font_pair(fonts, name, r#ref, &self.font_scheme)?);
         }
         Ok(Js::new_arr(out))
@@ -2192,7 +2563,10 @@ impl<'a> SaveContext<'a> {
         if run_properties.truthy() {
             copy.set(
                 "runProperties",
-                run_properties.with(&[("fontFamily", self.fonts_key(&run_properties.get("fontFamily"))?)]),
+                run_properties.with(&[(
+                    "fontFamily",
+                    self.fonts_key(&run_properties.get("fontFamily"))?,
+                )]),
             );
         }
         let round_trip = Js::parse(&copy.stringify().unwrap_or_else(|| "null".into()))?;
@@ -2200,7 +2574,13 @@ impl<'a> SaveContext<'a> {
     }
 
     /// `SaveContext.copiedParagraphProperties` (src/yrs/yrsToDocument.ts:3798).
-    pub(crate) fn copied_paragraph_properties(&self, story: &str, properties: &Js, items: &Js, preceding: &Js) -> Result<Js> {
+    pub(crate) fn copied_paragraph_properties(
+        &self,
+        story: &str,
+        properties: &Js,
+        items: &Js,
+        preceding: &Js,
+    ) -> Result<Js> {
         let original = as_obj_c(&properties.get("_originalFormatting"));
         let original_font = original
             .as_ref()
@@ -2222,13 +2602,21 @@ impl<'a> SaveContext<'a> {
         let mut possible: Vec<Possible> = Vec::new();
         let p_style = properties.get("pStyle");
         let paragraph_style = p_style.as_str();
-        let blocks = self.base_stories.get(story).cloned().unwrap_or_else(|| Js::new_arr(Vec::new()));
+        let blocks = self
+            .base_stories
+            .get(story)
+            .cloned()
+            .unwrap_or_else(|| Js::new_arr(Vec::new()));
         for paragraph in blocks.items() {
             if !type_is(&paragraph, "paragraph") {
                 continue;
             }
             let formatting = paragraph.get("formatting");
-            let formatting = if formatting.is_nullish() { Js::new_obj() } else { formatting };
+            let formatting = if formatting.is_nullish() {
+                Js::new_obj()
+            } else {
+                formatting
+            };
             if self.formatting_key(&formatting)? != self.formatting_key(&original)? {
                 continue;
             }
@@ -2237,13 +2625,23 @@ impl<'a> SaveContext<'a> {
                 .into_iter()
                 .filter(|run| js::len16(run.get("text").str_or_empty()) > 0)
                 .collect();
-            let Some(run) = runs.last().cloned() else { continue };
+            let Some(run) = runs.last().cloned() else {
+                continue;
+            };
             let run_formatting = run.get("formatting");
             let run_style = run_formatting.get("styleId");
-            let table_run = self.cell_runs.borrow().get(story).cloned().unwrap_or_default();
+            let table_run = self
+                .cell_runs
+                .borrow()
+                .get(story)
+                .cloned()
+                .unwrap_or_default();
             let inherited = self.inherited_run(paragraph_style, run_style.as_str(), &table_run)?;
             let expected = if run_formatting.get("fontFamily").truthy() {
-                merge_font_family(&inherited.get("fontFamily"), &run_formatting.get("fontFamily"))?
+                merge_font_family(
+                    &inherited.get("fontFamily"),
+                    &run_formatting.get("fontFamily"),
+                )?
             } else {
                 inherited.get("fontFamily")
             };
@@ -2253,15 +2651,25 @@ impl<'a> SaveContext<'a> {
                 let attributes = item.get("attributes");
                 let formatting = direct_formatting(&attributes)?;
                 let live = as_obj_c(&attributes.get("language"));
-                if !same_json_c(&self.fonts_key(&formatting.get("fontFamily"))?, &expected_key) {
+                if !same_json_c(
+                    &self.fonts_key(&formatting.get("fontFamily"))?,
+                    &expected_key,
+                ) {
                     continue;
                 }
                 let ok = match &live {
                     None => true,
                     Some(live) => {
                         let language = run_formatting.get("language");
-                        let language = if language.is_nullish() { Js::new_obj() } else { language };
-                        language.entries().iter().all(|(slot, value)| live.get(slot).strict_eq(value))
+                        let language = if language.is_nullish() {
+                            Js::new_obj()
+                        } else {
+                            language
+                        };
+                        language
+                            .entries()
+                            .iter()
+                            .all(|(slot, value)| live.get(slot).strict_eq(value))
                     }
                 };
                 if ok {
@@ -2280,11 +2688,18 @@ impl<'a> SaveContext<'a> {
             });
         }
         let matching: Vec<&Possible> = possible.iter().filter(|c| c.matches).collect();
-        let candidates: Vec<&Possible> = if !matching.is_empty() { matching } else { possible.iter().collect() };
+        let candidates: Vec<&Possible> = if !matching.is_empty() {
+            matching
+        } else {
+            possible.iter().collect()
+        };
         let preceding = preceding.items();
         let mut candidate: Option<&Possible> = None;
         for index in (0..preceding.len()).rev() {
-            candidate = candidates.iter().copied().find(|c| c.paragraph.strict_eq(&preceding[index]));
+            candidate = candidates
+                .iter()
+                .copied()
+                .find(|c| c.paragraph.strict_eq(&preceding[index]));
             if candidate.is_some() {
                 break;
             }
@@ -2292,11 +2707,12 @@ impl<'a> SaveContext<'a> {
         let candidate = match candidate {
             Some(c) => c,
             None => {
-                let Some(first) = candidates.first().copied() else { return Ok(properties.clone()) };
-                if candidates
-                    .iter()
-                    .any(|other| !same_json_c(&other.run, &first.run) || !same_json_c(&other.mark, &first.mark))
-                {
+                let Some(first) = candidates.first().copied() else {
+                    return Ok(properties.clone());
+                };
+                if candidates.iter().any(|other| {
+                    !same_json_c(&other.run, &first.run) || !same_json_c(&other.mark, &first.mark)
+                }) {
                     return Ok(properties.clone());
                 }
                 first
@@ -2324,13 +2740,23 @@ impl<'a> SaveContext<'a> {
             })
             .collect();
         Ok(properties.with(&[
-            ("_originalFormatting", original.with(&[("runProperties", run_properties)])),
-            ("_originalRunBoundaries", arr![obj! { "text" => text, "formatting" => formatting }]),
+            (
+                "_originalFormatting",
+                original.with(&[("runProperties", run_properties)]),
+            ),
+            (
+                "_originalRunBoundaries",
+                arr![obj! { "text" => text, "formatting" => formatting }],
+            ),
         ]))
     }
 
     /// `SaveContext.runFormatter` (src/yrs/yrsToDocument.ts:3871). Returns the formatter closure.
-    pub(crate) fn run_formatter<'s>(&'s self, story: &str, properties: &Js) -> impl Fn(&Js) -> Result<Js> + 's {
+    pub(crate) fn run_formatter<'s>(
+        &'s self,
+        story: &str,
+        properties: &Js,
+    ) -> impl Fn(&Js) -> Result<Js> + 's {
         let paragraph_style = properties.get("pStyle").as_str().map(str::to_owned);
         let story = story.to_owned();
         move |attributes: &Js| {
@@ -2338,24 +2764,49 @@ impl<'a> SaveContext<'a> {
                 .map(|r| r.get("styleId"))
                 .and_then(|s| as_str_c(&s))
                 .filter(|s| !s.is_empty());
-            let table_run = self.cell_runs.borrow().get(&story).cloned().unwrap_or_default();
-            let inherited = self.inherited_run(paragraph_style.as_deref(), run_style.as_deref(), &table_run)?;
+            let table_run = self
+                .cell_runs
+                .borrow()
+                .get(&story)
+                .cloned()
+                .unwrap_or_default();
+            let inherited =
+                self.inherited_run(paragraph_style.as_deref(), run_style.as_deref(), &table_run)?;
             relative_formatting(attributes, &inherited, &self.font_scheme)
         }
     }
 
     /// `SaveContext.inheritedRun` (src/yrs/yrsToDocument.ts:3881).
-    pub(crate) fn inherited_run(&self, paragraph_style: Option<&str>, run_style: Option<&str>, table_run: &Js) -> Result<Js> {
-        let key = arr![Js::from(paragraph_style), Js::from(run_style), table_run.clone()]
-            .stringify()
-            .unwrap_or_default();
+    pub(crate) fn inherited_run(
+        &self,
+        paragraph_style: Option<&str>,
+        run_style: Option<&str>,
+        table_run: &Js,
+    ) -> Result<Js> {
+        let key = arr![
+            Js::from(paragraph_style),
+            Js::from(run_style),
+            table_run.clone()
+        ]
+        .stringify()
+        .unwrap_or_default();
         if let Some(inherited) = self.inherited_runs.borrow().get(&key) {
             return Ok(inherited.clone());
         }
         let inheritance = self.inheritance()?;
-        let table_run = if table_run.is_undefined() { None } else { Some(table_run) };
-        let inherited = attrs_to_text_formatting(&inheritance.attributes(paragraph_style, run_style, table_run))?;
-        self.inherited_runs.borrow_mut().insert(key, inherited.clone());
+        let table_run = if table_run.is_undefined() {
+            None
+        } else {
+            Some(table_run)
+        };
+        let inherited = attrs_to_text_formatting(&inheritance.attributes(
+            paragraph_style,
+            run_style,
+            table_run,
+        ))?;
+        self.inherited_runs
+            .borrow_mut()
+            .insert(key, inherited.clone());
         Ok(inherited)
     }
 
@@ -2377,9 +2828,15 @@ impl<'a> SaveContext<'a> {
     /// `SaveContext.storyToBlocks` (src/yrs/yrsToDocument.ts:3915).
     pub(crate) fn story_to_blocks(&self, story_id: &str) -> Result<Js> {
         let base_blocks: Option<Js> = self.base_stories.get(story_id).cloned();
-        let story_comments = self.comments.get(story_id).cloned().unwrap_or_else(|| Js::new_arr(Vec::new()));
+        let story_comments = self
+            .comments
+            .get(story_id)
+            .cloned()
+            .unwrap_or_else(|| Js::new_arr(Vec::new()));
         let comments_key = match self.subtree_comments.get(story_id) {
-            Some(nested) => stable_stringify(&Js::obj_from(nested.clone()))?,
+            Some(nested) => stable_stringify(&Js::obj_from(
+                nested.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+            ))?,
             None => String::new(),
         };
         let prior_story = self.memo.get("stories").map_get(story_id);
@@ -2388,7 +2845,10 @@ impl<'a> SaveContext<'a> {
             && self.story_is_clean(story_id)?
             && (nested_story_parent(story_id).is_some()
                 || base_blocks.is_none()
-                || base_blocks.as_ref().unwrap().strict_eq(&prior_story.get("blocks")))
+                || base_blocks
+                    .as_ref()
+                    .unwrap()
+                    .strict_eq(&prior_story.get("blocks")))
         {
             return Ok(prior_story.get("blocks"));
         }
@@ -2422,49 +2882,66 @@ impl<'a> SaveContext<'a> {
         let mut story_offset: f64 = 0.0;
         let mut candidates_by_key: Option<IndexMap<String, Vec<Js>>> = None;
 
-        let candidates_for = |key: &str, cache: &mut Option<IndexMap<String, Vec<Js>>>| -> Vec<Js> {
+        let candidates_for = |key: &str,
+                              cache: &mut Option<IndexMap<String, Vec<Js>>>|
+         -> Vec<Js> {
             if cache.is_none() {
                 let mut map: IndexMap<String, Vec<Js>> = IndexMap::new();
                 for block in base_blocks.as_ref().map(|b| b.items()).unwrap_or_default() {
-                    let Some(block_key) = projected_blocks_get(&block).and_then(|m| m.key) else { continue };
+                    let Some(block_key) = projected_blocks_get(&block).and_then(|m| m.key) else {
+                        continue;
+                    };
                     map.entry(block_key).or_default().push(block);
                 }
                 *cache = Some(map);
             }
-            cache.as_ref().unwrap().get(key).cloned().unwrap_or_default()
+            cache
+                .as_ref()
+                .unwrap()
+                .get(key)
+                .cloned()
+                .unwrap_or_default()
         };
         let reuse_container = |candidates: Vec<Js>, inputs: &Js, children: &[Js]| -> Option<Js> {
             candidates.into_iter().find(|block| {
-                let Some(memo) = projected_blocks_get(block) else { return false };
+                let Some(memo) = projected_blocks_get(block) else {
+                    return false;
+                };
                 match (&memo.inputs, &memo.children) {
                     (Some(memo_inputs), Some(memo_children)) => {
                         same_json_c(memo_inputs, inputs)
                             && memo_children.len() == children.len()
-                            && memo_children.iter().zip(children.iter()).all(|(a, b)| a.strict_eq(b))
+                            && memo_children
+                                .iter()
+                                .zip(children.iter())
+                                .all(|(a, b)| a.strict_eq(b))
                     }
                     _ => false,
                 }
             })
         };
-        let paragraph_comment_boundaries = |end: f64, paragraph_start: f64, inline_start: f64| -> Js {
-            let boundaries = Js::new_arr(Vec::new());
-            for range in story_comments.items() {
-                let start = js::to_number(&range.get("start"));
-                let range_end = js::to_number(&range.get("end"));
-                if start >= paragraph_start && start <= end {
-                    let offset = (start - inline_start).max(0.0);
-                    boundaries.push(obj! { "id" => range.get("id"), "kind" => "start", "offset" => offset });
+        let paragraph_comment_boundaries =
+            |end: f64, paragraph_start: f64, inline_start: f64| -> Js {
+                let boundaries = Js::new_arr(Vec::new());
+                for range in story_comments.items() {
+                    let start = js::to_number(&range.get("start"));
+                    let range_end = js::to_number(&range.get("end"));
+                    if start >= paragraph_start && start <= end {
+                        let offset = (start - inline_start).max(0.0);
+                        boundaries.push(
+                            obj! { "id" => range.get("id"), "kind" => "start", "offset" => offset },
+                        );
+                    }
+                    if range_end >= paragraph_start && range_end <= end {
+                        boundaries.push(obj! {
+                            "id" => range.get("id"),
+                            "kind" => "end",
+                            "offset" => (range_end - inline_start).max(0.0),
+                        });
+                    }
                 }
-                if range_end >= paragraph_start && range_end <= end {
-                    boundaries.push(obj! {
-                        "id" => range.get("id"),
-                        "kind" => "end",
-                        "offset" => (range_end - inline_start).max(0.0),
-                    });
-                }
-            }
-            boundaries
-        };
+                boundaries
+            };
         let push_text = |items: &Js, text: &str, attributes: &Js| {
             let units = js::utf16(text);
             let mut cursor = 0;
@@ -2509,17 +2986,29 @@ impl<'a> SaveContext<'a> {
             }
             if kind_str.as_str() == Some("pilcrow") {
                 let para_id = key_of(&segment.get("paraId"));
-                let live_trailing = trailing_by_paragraph.get(&para_id).cloned().unwrap_or_default();
+                let live_trailing = trailing_by_paragraph
+                    .get(&para_id)
+                    .cloned()
+                    .unwrap_or_default();
                 let saved = paragraph_ids.at(paragraph_index);
-                let saved_para_id = if saved.is_nullish() { String::new() } else { key_of(&saved) };
+                let saved_para_id = if saved.is_nullish() {
+                    String::new()
+                } else {
+                    key_of(&saved)
+                };
                 let base_paragraph = self.base_paragraphs.get(&para_id).cloned();
                 if let Some(bp) = &base_paragraph {
                     preceding_base_paragraphs.push(bp.clone());
                 }
                 let base_paragraph_js = base_paragraph.clone().unwrap_or_default();
-                let boundaries = paragraph_comment_boundaries(story_offset, paragraph_start, inline_start);
+                let boundaries =
+                    paragraph_comment_boundaries(story_offset, paragraph_start, inline_start);
                 let source = source_break_boundaries(&base_paragraph_js)?;
-                let source_runs_value = if source.items().iter().any(|b| b.path(&["breaks", "length"]).truthy()) {
+                let source_runs_value = if source
+                    .items()
+                    .iter()
+                    .any(|b| b.path(&["breaks", "length"]).truthy())
+                {
                     source
                 } else {
                     Js::Undefined
@@ -2539,7 +3028,10 @@ impl<'a> SaveContext<'a> {
                 let prior_memo = base_paragraph.as_ref().and_then(projected_blocks_get);
                 let mut paragraph: Js;
                 let reuse = match (&base_paragraph, &prior_memo) {
-                    (Some(_), Some(memo)) => memo.inputs.as_ref().map_or(false, |i| same_json_c(i, &inputs)),
+                    (Some(_), Some(memo)) => memo
+                        .inputs
+                        .as_ref()
+                        .map_or(false, |i| same_json_c(i, &inputs)),
                     _ => false,
                 };
                 if reuse {
@@ -2568,7 +3060,12 @@ impl<'a> SaveContext<'a> {
                     let paragraph_properties = if base_paragraph.is_some() {
                         properties.clone()
                     } else {
-                        self.copied_paragraph_properties(story_id, &properties, &items, &preceding_base_paragraphs)?
+                        self.copied_paragraph_properties(
+                            story_id,
+                            &properties,
+                            &items,
+                            &preceding_base_paragraphs,
+                        )?
                     };
                     let live_breaks = obj! {
                         "leading" => breaks.clone(),
@@ -2594,12 +3091,19 @@ impl<'a> SaveContext<'a> {
                     let trailing = trailing_block_breaks_vec(&paragraph)?;
                     let leading = leading_block_breaks_vec(&paragraph)?;
                     let break_list = arr_strings(&breaks);
-                    let consumed = if leading.iter().enumerate().all(|(i, k)| break_list.get(i) == Some(k)) {
+                    let consumed = if leading
+                        .iter()
+                        .enumerate()
+                        .all(|(i, k)| break_list.get(i) == Some(k))
+                    {
                         leading.len()
                     } else {
                         0
                     };
-                    let pending: Vec<String> = break_list.get(consumed..).map(<[String]>::to_vec).unwrap_or_default();
+                    let pending: Vec<String> = break_list
+                        .get(consumed..)
+                        .map(<[String]>::to_vec)
+                        .unwrap_or_default();
                     if !pending.is_empty() {
                         let mut content: Vec<Js> = pending
                             .iter()
@@ -2647,20 +3151,29 @@ impl<'a> SaveContext<'a> {
                 let rows = payload.get("rows");
                 let first_cell = if rows.is_arr() {
                     let cells = rows.at(0).get("cells");
-                    if cells.is_arr() { cells.at(0) } else { cells.get("0") }
+                    if cells.is_arr() {
+                        cells.at(0)
+                    } else {
+                        cells.get("0")
+                    }
                 } else {
                     Js::Undefined
                 };
-                let key = format!("T{}", js::to_js_string(&first_cell.get("story").nullish_or(Js::from(""))));
+                let key = format!(
+                    "T{}",
+                    js::to_js_string(&first_cell.get("story").nullish_or(Js::from("")))
+                );
                 let contents = if !candidates_for(&key, &mut candidates_by_key).is_empty() {
                     Some(self.cell_contents(&payload, story_id)?)
                 } else {
                     None
                 };
                 let reused = match &contents {
-                    Some(contents) => {
-                        reuse_container(candidates_for(&key, &mut candidates_by_key), &inputs, &contents.items())
-                    }
+                    Some(contents) => reuse_container(
+                        candidates_for(&key, &mut candidates_by_key),
+                        &inputs,
+                        &contents.items(),
+                    ),
                     None => None,
                 };
                 let table = match reused {
@@ -2677,7 +3190,10 @@ impl<'a> SaveContext<'a> {
                                 key: Some(key.clone()),
                                 inputs: Some(inputs.clone()),
                                 table_baseline: self.payload_baselines.get(&payload),
-                                table_source_prefix: first_cell.get("story").as_str().and_then(table_prefix_of),
+                                table_source_prefix: first_cell
+                                    .get("story")
+                                    .as_str()
+                                    .and_then(table_prefix_of),
                                 children: Some(children.items()),
                                 ..Default::default()
                             },
@@ -2692,7 +3208,9 @@ impl<'a> SaveContext<'a> {
                     self.memo.get("parents").map_set(child, story_id);
                 }
                 let child_content = match child_story.as_ref() {
-                    Some(child) if !child.is_empty() && self.story_ids.contains(child) => self.story_to_blocks(child)?,
+                    Some(child) if !child.is_empty() && self.story_ids.contains(child) => {
+                        self.story_to_blocks(child)?
+                    }
                     _ => empty_blocks(),
                 };
                 let inputs = arr![segment.get("attributes"), payload.clone()];
@@ -2709,16 +3227,23 @@ impl<'a> SaveContext<'a> {
                     let mut content = child_content.clone();
                     let authored_value = content_control_value(&payload.get("value"))?;
                     if authored_value.truthy() {
-                        if let Ok(applied) = apply_content_control_value(&properties, &authored_value) {
+                        if let Ok(applied) =
+                            apply_content_control_value(&properties, &authored_value)
+                        {
                             properties = applied.get("properties");
-                            if let Ok(carried) = carry_paragraph_identities(&applied.get("content"), &child_content) {
+                            if let Ok(carried) =
+                                carry_paragraph_identities(&applied.get("content"), &child_content)
+                            {
                                 content = carried;
                             }
                         }
                         // Retain the child story if the authored value is invalid.
                     }
-                    let block_content =
-                        if content.strict_eq(&empty_blocks()) { Js::new_arr(Vec::new()) } else { content.clone() };
+                    let block_content = if content.strict_eq(&empty_blocks()) {
+                        Js::new_arr(Vec::new())
+                    } else {
+                        content.clone()
+                    };
                     let block = obj! {
                         "type" => "blockSdt",
                         "properties" => properties,
@@ -2751,7 +3276,10 @@ impl<'a> SaveContext<'a> {
                     blocks.push(page_break_paragraph()?);
                 } else {
                     // Carry a same-position base block while block SDTs stay opaque.
-                    let base_block = base_blocks.as_ref().map(|b| b.at(blocks.len())).unwrap_or_default();
+                    let base_block = base_blocks
+                        .as_ref()
+                        .map(|b| b.at(blocks.len()))
+                        .unwrap_or_default();
                     if blob_type.as_str() == Some("blockSdt") && type_is(&base_block, "blockSdt") {
                         blocks.push(base_block);
                     }
@@ -2822,14 +3350,18 @@ impl<'a> SaveContext<'a> {
                         &Js::Undefined,
                     )?;
                 }
-                None => blocks.push(obj! { "type" => "paragraph", "content" => Js::new_arr(pending_breaks) }),
+                None => blocks
+                    .push(obj! { "type" => "paragraph", "content" => Js::new_arr(pending_breaks) }),
             }
         }
-        let base_arr = base_blocks.clone().unwrap_or_else(|| Js::new_arr(Vec::new()));
+        let base_arr = base_blocks
+            .clone()
+            .unwrap_or_else(|| Js::new_arr(Vec::new()));
         let projected = restore_raw_blocks(&Js::new_arr(blocks), &base_arr, story_id)?;
-        self.memo
-            .get("stories")
-            .map_set(story_id, obj! { "commentsKey" => comments_key, "blocks" => projected.clone() });
+        self.memo.get("stories").map_set(
+            story_id,
+            obj! { "commentsKey" => comments_key, "blocks" => projected.clone() },
+        );
         map_delete(&self.memo.get("dirty"), story_id);
         self.memo.get("clean").map_set(story_id, true);
         Ok(projected)
@@ -2844,7 +3376,10 @@ mod tests {
     fn nested_story_ids() {
         assert_eq!(nested_story_parent("body:t0:r1c2"), Some("body".into()));
         assert_eq!(nested_story_parent("body:t0:r1c2~3"), Some("body".into()));
-        assert_eq!(nested_story_parent("body:sdt0:t1:r0c0"), Some("body:sdt0".into()));
+        assert_eq!(
+            nested_story_parent("body:sdt0:t1:r0c0"),
+            Some("body:sdt0".into())
+        );
         assert_eq!(nested_story_parent("body:sdt4"), Some("body".into()));
         assert_eq!(nested_story_parent(":sdt4"), Some("".into()));
         assert_eq!(nested_story_parent("body"), None);
@@ -2854,7 +3389,10 @@ mod tests {
     #[test]
     fn table_prefixes() {
         assert_eq!(table_prefix_of("body:t0:r1c2"), Some("body:t0".into()));
-        assert_eq!(table_prefix_of("body:t0:r1c2:t3:r0c0~1"), Some("body:t0:r1c2:t3".into()));
+        assert_eq!(
+            table_prefix_of("body:t0:r1c2:t3:r0c0~1"),
+            Some("body:t0:r1c2:t3".into())
+        );
         assert_eq!(table_prefix_of("body:sdt0"), None);
         assert_eq!(table_prefix_of(":t:r1c2"), None);
     }
@@ -2865,12 +3403,19 @@ mod tests {
         assert_eq!(b.stringify().unwrap(), r#"{"kind":"start","id":"7"}"#);
         let b = raw_block_bookmark("<w:bookmarkEnd w:id='x'/>").unwrap();
         assert_eq!(b.stringify().unwrap(), r#"{"kind":"end","id":"x"}"#);
-        assert!(raw_block_bookmark("<w:bookmarkStartX/>").unwrap().is_undefined());
+        assert!(
+            raw_block_bookmark("<w:bookmarkStartX/>")
+                .unwrap()
+                .is_undefined()
+        );
         assert!(raw_block_bookmark("<w:bookmarkStart foo:id=\"1\"/>").is_err());
         assert!(raw_block_bookmark("<w:bookmarkStart w:id=\"1\" w:id=\"2\"/>").is_err());
         let b = raw_block_bookmark("<w:bookmarkEnd xmlns:v=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" v:id=\"&#x31;\"/>").unwrap();
         assert_eq!(b.get("id").as_str(), Some("1"));
-        assert_eq!(decode_entities("&lt;&#65;&bogus;&#x110000;"), "<A&bogus;&#x110000;");
+        assert_eq!(
+            decode_entities("&lt;&#65;&bogus;&#x110000;"),
+            "<A&bogus;&#x110000;"
+        );
     }
 
     #[test]
@@ -2878,13 +3423,24 @@ mod tests {
         let a = Js::parse(r#"{"a":[1,{"b":null}]}"#).unwrap();
         let b = Js::parse(r#"{"a":[1,{"b":null}]}"#).unwrap();
         assert!(same_json_c(&a, &b));
-        assert!(!same_json_c(&a, &Js::parse(r#"{"a":[1,{"b":0}]}"#).unwrap()));
+        assert!(!same_json_c(
+            &a,
+            &Js::parse(r#"{"a":[1,{"b":0}]}"#).unwrap()
+        ));
     }
 
     #[test]
     fn break_tokens() {
         let p = Js::parse(r#"{"content":[{"type":"run","content":[{"type":"break","breakType":"page"},{"type":"text","text":"x"},{"type":"break","breakType":"column"}]}]}"#).unwrap();
-        assert_eq!(trailing_block_breaks_vec(&p).unwrap(), vec!["column".to_string()]);
+        assert_eq!(
+            trailing_block_breaks_vec(&p).unwrap(),
+            vec!["column".to_string()]
+        );
         assert_eq!(leading_block_breaks_vec(&p).unwrap(), Vec::<String>::new());
     }
+}
+
+/// Drops the `PROJECTED_BLOCKS` entries of objects that no longer exist.
+pub(crate) fn prune_projected_blocks() {
+    PROJECTED_BLOCKS.with(|marks| marks.clear());
 }

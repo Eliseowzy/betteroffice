@@ -43,7 +43,10 @@ impl OpenedSource {
         drop(document);
         drop(host);
         let bytes = Rc::try_unwrap(shared).unwrap_or_else(|rc| (*rc).clone());
-        Ok(Self { bytes: std::sync::Arc::new(bytes), keys })
+        Ok(Self {
+            bytes: std::sync::Arc::new(bytes),
+            keys,
+        })
     }
 
     /// The source package bytes.
@@ -190,7 +193,9 @@ impl<'a> Session<'a> {
         if document.is_nullish() {
             return Ok(Js::Null);
         }
-        let copy = document.with(&[("originalBuffer", Js::Undefined)]).deep_clone();
+        let copy = document
+            .with(&[("originalBuffer", Js::Undefined)])
+            .deep_clone();
         copy.set("originalBuffer", Js::Bytes(source.bytes.clone()));
         Ok(copy)
     }
@@ -275,7 +280,9 @@ impl Inheritance {
     ) -> Js {
         let mut inner = self.0.borrow_mut();
         let attrs = match table_run {
-            Some(table_run) => inner.table_run_attrs(paragraph_style, run_style, table_run.to_serde()),
+            Some(table_run) => {
+                inner.table_run_attrs(paragraph_style, run_style, table_run.to_serde())
+            }
             None => inner.run_attrs(paragraph_style, run_style),
         };
         Js::from_serde(&serde_json::to_value(&attrs).unwrap_or(serde_json::Value::Null))
@@ -288,7 +295,10 @@ impl Inheritance {
         } else {
             Some(table_formatting.to_serde())
         };
-        let formatting = self.0.borrow_mut().paragraph_formatting(paragraph_style, table_formatting);
+        let formatting = self
+            .0
+            .borrow_mut()
+            .paragraph_formatting(paragraph_style, table_formatting);
         let json = formatting.unwrap_or(serde_json::Value::Null);
         if json.is_null() {
             Js::Undefined

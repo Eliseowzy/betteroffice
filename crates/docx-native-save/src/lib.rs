@@ -89,6 +89,13 @@ pub fn save_docx(
     source: &OpenedSource,
     options: &SaveOptions,
 ) -> Result<SavedDocx, SaveError> {
-    let session = session::Session::new(core, Some(source))?;
-    save::save_docx_native(&session, options)
+    let saved = {
+        let session = session::Session::new(core, Some(source))?;
+        save::save_docx_native(&session, options)
+    };
+    header_footer_alias_projection::prune_aliases();
+    session_revision_ids::prune_session_infos();
+    yrs_to_document::prune_projected_blocks();
+    yrs_to_document::prune_projected_table_cells();
+    saved
 }

@@ -1,13 +1,13 @@
 //! Port of `packages/docx/src/utils/paragraphFormattingMerge.ts`.
 #![allow(unused_variables, unused_imports, dead_code, clippy::all)]
 
-use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
-use indexmap::IndexMap;
 use crate::js::{Js, Result, SaveError};
 use crate::session::{Inheritance, Session};
-use crate::{arr, obj, throw};
 use crate::text_formatting_merge::merge_text_formatting;
+use crate::{arr, obj, throw};
+use indexmap::IndexMap;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 /// `mergeParagraphFormatting` (src/utils/paragraphFormattingMerge.ts:4).
 pub(crate) fn merge_paragraph_formatting(target: &Js, source: &Js) -> Result<Js> {
@@ -24,10 +24,17 @@ pub(crate) fn merge_paragraph_formatting(target: &Js, source: &Js) -> Result<Js>
             continue;
         }
         if key == "runProperties" {
-            result.set("runProperties", merge_text_formatting(&result.get("runProperties"), &source.get("runProperties"))?);
+            result.set(
+                "runProperties",
+                merge_text_formatting(&result.get("runProperties"), &source.get("runProperties"))?,
+            );
         } else if key == "borders" || key == "numPr" || key == "frame" {
             let base = result.get(&key);
-            let merged = if base.truthy() { base.spread() } else { Js::new_obj() };
+            let merged = if base.truthy() {
+                base.spread()
+            } else {
+                Js::new_obj()
+            };
             if value.truthy() {
                 merged.assign(&value);
             }

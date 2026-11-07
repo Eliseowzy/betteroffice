@@ -72,7 +72,10 @@ fn parse_args() -> Result<Args, String> {
             "--now" => a.now = Some(value("--now")?),
             "--modified-by" => a.modified_by = Some(value("--modified-by")?),
             "--repeat" => {
-                a.repeat = value("--repeat")?.parse::<usize>().map_err(|e| e.to_string())?.max(1)
+                a.repeat = value("--repeat")?
+                    .parse::<usize>()
+                    .map_err(|e| e.to_string())?
+                    .max(1)
             }
             "--no-modified-date" => a.update_modified_date = false,
             "--json" => a.json = true,
@@ -89,7 +92,11 @@ fn parse_args() -> Result<Args, String> {
 fn run() -> Result<(), String> {
     let args = parse_args()?;
     let read = |p: &str| std::fs::read(p).map_err(|e| format!("{p}: {e}"));
-    let (source, state, metadata) = (read(&args.source)?, read(&args.state)?, read(&args.metadata)?);
+    let (source, state, metadata) = (
+        read(&args.source)?,
+        read(&args.state)?,
+        read(&args.metadata)?,
+    );
     let mut open_ms = Vec::new();
     let mut save_ms = Vec::new();
     let mut last = None;
@@ -101,8 +108,8 @@ fn run() -> Result<(), String> {
             .map_err(|e| format!("open_docx: {e}"))?;
         core.bootstrap_peer(&state, &metadata, Some(source.clone()))
             .map_err(|e| format!("bootstrap_peer: {e}"))?;
-        let opened =
-            OpenedSource::after_open(source.clone(), &open_json).map_err(|e| format!("after_open: {e}"))?;
+        let opened = OpenedSource::after_open(source.clone(), &open_json)
+            .map_err(|e| format!("after_open: {e}"))?;
         let t1 = Instant::now();
         let saved = save_docx(
             &core,

@@ -2,6 +2,7 @@ import { DocxSectionError, sectionPropertiesEqual } from './sections';
 import { preloadOpcWasm, rezipContainer, unzipContainer } from '../docx/wasm';
 /** Session save that reports where each saved paragraph can be found after reopening. */
 
+import { beginNativeSaveProbe } from './nativeSaveProbe';
 import { engineProgress } from '../utils/engineProgress';
 import type { RepackOptions } from '../docx/rezip';
 import {
@@ -677,6 +678,16 @@ export async function writeSessionSave(
 export async function saveYrsDocx(
   session: YrsSession,
   options: DocxSaveOptions = {}
+): Promise<DocxSavedDocument> {
+  const probe = beginNativeSaveProbe(session, options); // env-gated test tooling; undefined when off
+  const saved = await saveYrsDocxUnprobed(session, options);
+  await probe?.(saved);
+  return saved;
+}
+
+async function saveYrsDocxUnprobed(
+  session: YrsSession,
+  options: DocxSaveOptions
 ): Promise<DocxSavedDocument> {
   let base = session.materializeDocx();
   if (!base?.originalBuffer) {

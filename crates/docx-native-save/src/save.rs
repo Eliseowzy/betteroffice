@@ -41,7 +41,7 @@ fn empty_arr() -> Js {
 
 /// `x?.length` truthiness.
 fn has_length(value: &Js) -> bool {
-    value.len() > 0
+    !value.is_empty()
 }
 
 /// `Array.prototype.includes` (SameValueZero) on an array, `undefined` for a non-array.
@@ -131,7 +131,7 @@ pub(crate) fn comment_blocks(body: &Js) -> Result<Js> {
 /// `commentContent` (src/yrs/saveYrsDocx.ts:114).
 pub(crate) fn comment_content(body: &Js) -> Result<Js> {
     let blocks = comment_blocks(body)?;
-    if blocks.truthy() && blocks.len() > 0 {
+    if blocks.truthy() && !blocks.is_empty() {
         return Ok(Js::new_arr(
             blocks
                 .items()
@@ -565,11 +565,10 @@ pub(crate) fn map_story_paragraphs(document: &Js, map: &dyn Fn(&Js) -> Result<Js
         for (id, part) in stories.map_entries() {
             let projected = with_content(&part)?;
             let canonical = header_footer_alias_of(&part)?;
-            if !projected.strict_eq(&part) {
-                if let Some(canonical) = canonical {
+            if !projected.strict_eq(&part)
+                && let Some(canonical) = canonical {
                     mark_header_footer_alias(&projected, &canonical)?;
                 }
-            }
             out.map_set(&id, projected);
         }
         Ok(out)
@@ -1049,12 +1048,11 @@ pub(crate) fn section_save_plan(
                 .iter()
                 .find(|(o, _)| o.strict_eq(&preceding))
                 .cloned();
-            if let Some(previous) = previous {
-                if let Some(inherited) = changed(&previous.1, &block.get("sectionProperties"))? {
+            if let Some(previous) = previous
+                && let Some(inherited) = changed(&previous.1, &block.get("sectionProperties"))? {
                     donor = Some(previous);
                     properties = Some(inherited);
                 }
-            }
         }
         let Some(properties) = properties else {
             legacy = true;
@@ -1114,8 +1112,8 @@ pub(crate) fn section_save_plan(
             || !i.get("source").is_null()
             || i.get("origin").as_str() == Some("synthetic")
     }) && section_save_metadata(&source)? == section_save_metadata(output)?
-        && plan.get("assignments").len() == 0
-        && patched_parts.iter().all(|p| p.get("paraIds").len() == 0)
+        && plan.get("assignments").is_empty()
+        && patched_parts.iter().all(|p| p.get("paraIds").is_empty())
         && known_parts.iter().all(|path| {
             if patched_parts
                 .iter()
@@ -1412,7 +1410,9 @@ pub(crate) fn write_session_save(
     };
     let paragraphs = saved_paragraphs(&output, &identities)?;
     let bytes = buffer.as_bytes().cloned().unwrap_or_default();
-    let held = session.written_paragraph_ids(&bytes)?;
+    let held = crate::js::timed("written_paragraph_ids", || {
+        session.written_paragraph_ids(&bytes)
+    })?;
     let mut held_sets: HashMap<String, HashSet<String>> = HashMap::new();
     for (part, ids) in held.entries() {
         held_sets.insert(
@@ -1486,7 +1486,7 @@ pub(crate) fn write_session_save(
 
 /// `saveYrsDocx` (src/yrs/saveYrsDocx.ts:677).
 pub(crate) fn save_yrs_docx(session: &Session, options: &Js) -> Result<Js> {
-    let mut base = session.materialize_docx()?;
+    let mut base = crate::js::timed("materialize_docx", || session.materialize_docx())?;
     if !base.get("originalBuffer").truthy() {
         throw!("saveYrsDocx requires a session opened from DOCX bytes");
     }
@@ -1500,7 +1500,9 @@ pub(crate) fn save_yrs_docx(session: &Session, options: &Js) -> Result<Js> {
         .as_bytes()
         .cloned()
         .unwrap_or_default();
-    let mut capture = capture_session_save(session, &Js::Undefined)?;
+    let mut capture = crate::js::timed("capture_session_save", || {
+        capture_session_save(session, &Js::Undefined)
+    })?;
     if comment_baseline.truthy() {
         let baseline_bytes = comment_baseline
             .get("bytes")
@@ -1585,11 +1587,13 @@ pub(crate) fn save_yrs_docx(session: &Session, options: &Js) -> Result<Js> {
     } else {
         base.clone()
     };
-    let document = yrs_to_document(
-        session,
-        &projection_base,
-        &obj! { "commentIds" => comments.get("sessionIds") },
-    )?;
+    let document = crate::js::timed("yrs_to_document", || {
+        yrs_to_document(
+            session,
+            &projection_base,
+            &obj! { "commentIds" => comments.get("sessionIds") },
+        )
+    })?;
     let patches = |part: &str| -> Result<bool> { Ok(!changed || part != COMMENTS_PART) };
     write_session_save(
         session, &document, &capture, &original, options, &patches, false, &patches, None,

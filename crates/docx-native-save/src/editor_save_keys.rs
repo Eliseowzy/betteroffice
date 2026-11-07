@@ -1,12 +1,12 @@
 //! Port of `packages/docx/src/yrs/editorSaveKeys.ts`.
 #![allow(unused_variables, unused_imports, dead_code, clippy::all)]
 
-use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
-use indexmap::IndexMap;
 use crate::js::{Js, Result, SaveError};
 use crate::session::{Inheritance, Session};
 use crate::{arr, obj, throw};
+use indexmap::IndexMap;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 /// `const { content, ...metadata } = part`.
 fn without_content(part: &Js) -> Js {
@@ -87,7 +87,10 @@ mod tests {
     #[test]
     fn editor_save_keys_match_ts() {
         let headers = Js::new_map();
-        headers.map_set("rId1", obj! { "type" => "default", "content" => arr![1], "hdrShapes" => Js::new_map() });
+        headers.map_set(
+            "rId1",
+            obj! { "type" => "default", "content" => arr![1], "hdrShapes" => Js::new_map() },
+        );
         let rels = Js::new_map();
         rels.map_set("rId1", obj! { "target" => "header1.xml" });
         let doc = obj! { "package" => obj! {
@@ -106,6 +109,9 @@ mod tests {
             keys.stringify().unwrap(),
             r#"{"metadata":"{\"finalSectionProperties\":{\"pageWidth\":12240},\"headers\":[[\"rId1\",{\"type\":\"default\",\"hdrShapes\":[]}]],\"footers\":[],\"footnotes\":[{\"id\":1,\"type\":\"normal\"}],\"endnotes\":[],\"relationships\":[[\"rId1\",{\"target\":\"header1.xml\"}]]}","comments":"[{\"id\":3,\"author\":\"A\"},{\"id\":7}]","commentIds":[3,7]}"#
         );
-        assert_eq!(note_separator_keys(&doc).unwrap().stringify().unwrap(), r#"{"footnotes":"[{\"a\":1}]","endnotes":"[]"}"#);
+        assert_eq!(
+            note_separator_keys(&doc).unwrap().stringify().unwrap(),
+            r#"{"footnotes":"[{\"a\":1}]","endnotes":"[]"}"#
+        );
     }
 }

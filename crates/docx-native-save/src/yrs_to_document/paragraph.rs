@@ -1,30 +1,73 @@
 //! Port of `packages/docx/src/yrs/yrsToDocument.ts` (part).
 #![allow(unused_variables, unused_imports, dead_code, clippy::all)]
 
-use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
-use indexmap::IndexMap;
-use crate::js::{self, Js, Result, SaveError};
-use crate::session::{Inheritance, Session};
-use crate::{arr, obj, throw};
 use super::*;
+use crate::js::{self, Js, Result, SaveError};
 use crate::raw_xml::is_raw_xml;
-use crate::save_formatting::{paragraph_attrs_to_formatting, table_attrs_to_formatting, table_cell_attrs_to_formatting, table_row_attrs_to_formatting};
+use crate::save_formatting::{
+    paragraph_attrs_to_formatting, table_attrs_to_formatting, table_cell_attrs_to_formatting,
+    table_row_attrs_to_formatting,
+};
+use crate::session::{Inheritance, Session};
 use crate::story_plain_text::table_row_grid;
 use crate::table_row_spans::seeded_cell_indices;
+use crate::{arr, obj, throw};
+use indexmap::IndexMap;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 // ----- private copies of constants declared in part A (lines 1–1454) -----
 
 const PARAGRAPH_ATTR_DEFAULTS_KEYS_B: &[&str] = &[
-    "paraId", "textId", "alignment", "spaceBefore", "spaceAfter", "lineSpacing", "lineSpacingRule",
-    "spacingExplicit", "indentLeft", "indentRight", "indentFirstLine", "hangingIndent", "numPr",
-    "numPrFromStyle", "listNumFmt", "listIsBullet", "listMarker", "listMarkerHidden",
-    "listMarkerFontFamily", "listMarkerFontSize", "listMarkerSuffix", "listLevelNumFmts",
-    "listAbstractNumId", "listStartOverride", "styleId", "borders", "shading", "tabs",
-    "pageBreakBefore", "renderedPageBreakBefore", "keepNext", "keepLines", "widowControl",
-    "contextualSpacing", "snapToGrid", "autoSpaceDE", "autoSpaceDN", "adjustRightInd", "cnfStyle",
-    "defaultTextFormatting", "sectionBreakType", "bidi", "outlineLevel", "bookmarks",
-    "_originalFormatting", "_originalRunBoundaries", "_sectionProperties", "pPrIns", "pPrDel",
+    "paraId",
+    "textId",
+    "alignment",
+    "spaceBefore",
+    "spaceAfter",
+    "lineSpacing",
+    "lineSpacingRule",
+    "spacingExplicit",
+    "indentLeft",
+    "indentRight",
+    "indentFirstLine",
+    "hangingIndent",
+    "numPr",
+    "numPrFromStyle",
+    "listNumFmt",
+    "listIsBullet",
+    "listMarker",
+    "listMarkerHidden",
+    "listMarkerFontFamily",
+    "listMarkerFontSize",
+    "listMarkerSuffix",
+    "listLevelNumFmts",
+    "listAbstractNumId",
+    "listStartOverride",
+    "styleId",
+    "borders",
+    "shading",
+    "tabs",
+    "pageBreakBefore",
+    "renderedPageBreakBefore",
+    "keepNext",
+    "keepLines",
+    "widowControl",
+    "contextualSpacing",
+    "snapToGrid",
+    "autoSpaceDE",
+    "autoSpaceDN",
+    "adjustRightInd",
+    "cnfStyle",
+    "defaultTextFormatting",
+    "sectionBreakType",
+    "bidi",
+    "outlineLevel",
+    "bookmarks",
+    "_originalFormatting",
+    "_originalRunBoundaries",
+    "_sectionProperties",
+    "pPrIns",
+    "pPrDel",
     "pPrChange",
 ];
 
@@ -32,7 +75,14 @@ fn paragraph_attr_defaults_b() -> Js {
     let o = Js::new_obj();
     for key in PARAGRAPH_ATTR_DEFAULTS_KEYS_B {
         // `hangingIndent: false`, every other default null.
-        o.set(key, if *key == "hangingIndent" { Js::Bool(false) } else { Js::Null });
+        o.set(
+            key,
+            if *key == "hangingIndent" {
+                Js::Bool(false)
+            } else {
+                Js::Null
+            },
+        );
     }
     o
 }
@@ -40,8 +90,18 @@ fn paragraph_attr_defaults_b() -> Js {
 fn table_attr_defaults_b() -> Js {
     let o = Js::new_obj();
     for key in [
-        "styleId", "width", "widthType", "justification", "columnWidths", "tableLayout", "floating",
-        "cellMargins", "look", "bidi", "_originalFormatting", "tblPrChange",
+        "styleId",
+        "width",
+        "widthType",
+        "justification",
+        "columnWidths",
+        "tableLayout",
+        "floating",
+        "cellMargins",
+        "look",
+        "bidi",
+        "_originalFormatting",
+        "tblPrChange",
     ] {
         o.set(key, Js::Null);
     }
@@ -61,15 +121,36 @@ fn table_row_attr_defaults_b() -> Js {
 }
 
 const BOOLEAN_MARKS_B: &[&str] = &[
-    "bold", "italic", "superscript", "subscript", "allCaps", "smallCaps", "emboss", "imprint",
-    "textShadow", "textOutline", "hidden", "rtl",
+    "bold",
+    "italic",
+    "superscript",
+    "subscript",
+    "allCaps",
+    "smallCaps",
+    "emboss",
+    "imprint",
+    "textShadow",
+    "textOutline",
+    "hidden",
+    "rtl",
 ];
 
-const SOURCE_RUN_PROPERTIES_B: &[&str] =
-    &["bold", "italic", "fontSize", "boldCs", "italicCs", "fontSizeCs", "language", "fontFamily"];
+const SOURCE_RUN_PROPERTIES_B: &[&str] = &[
+    "bold",
+    "italic",
+    "fontSize",
+    "boldCs",
+    "italicCs",
+    "fontSizeCs",
+    "language",
+    "fontFamily",
+];
 
 fn non_formatting_attrs_b() -> HashSet<String> {
-    ["hyperlink", "ins", "del"].iter().map(|s| s.to_string()).collect()
+    ["hyperlink", "ins", "del"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 const MAX_SAFE_INTEGER_B: f64 = 9007199254740991.0;
@@ -91,7 +172,6 @@ pub(crate) fn projected_table_cells_set(table: &Js, cells: Js) {
     PROJECTED_TABLE_CELLS.with(|m| m.set(table, cells))
 }
 
-
 // ----- small JS helpers -----
 
 fn num(value: &Js) -> f64 {
@@ -99,11 +179,19 @@ fn num(value: &Js) -> f64 {
 }
 
 fn js_min(a: f64, b: f64) -> f64 {
-    if a.is_nan() || b.is_nan() { f64::NAN } else { a.min(b) }
+    if a.is_nan() || b.is_nan() {
+        f64::NAN
+    } else {
+        a.min(b)
+    }
 }
 
 fn js_max(a: f64, b: f64) -> f64 {
-    if a.is_nan() || b.is_nan() { f64::NAN } else { a.max(b) }
+    if a.is_nan() || b.is_nan() {
+        f64::NAN
+    } else {
+        a.max(b)
+    }
 }
 
 fn ty(value: &Js) -> String {
@@ -116,7 +204,11 @@ fn type_is(value: &Js, t: &str) -> bool {
 
 /// `arr[i]` for a numeric index (undefined for negative, fractional or out of range).
 fn at_f(array: &Js, index: f64) -> Js {
-    if index >= 0.0 && index.fract() == 0.0 { array.at(index as usize) } else { Js::Undefined }
+    if index >= 0.0 && index.fract() == 0.0 {
+        array.at(index as usize)
+    } else {
+        Js::Undefined
+    }
 }
 
 fn str_items(value: &Js) -> Vec<String> {
@@ -142,14 +234,21 @@ fn comment_marker(boundary: &Js) -> Result<Js> {
 /// A property read that throws as JS does on `null`/`undefined`.
 fn prop(value: &Js, key: &str) -> Result<Js> {
     if value.is_nullish() {
-        throw!("Cannot read properties of {} (reading '{}')", js::to_js_string(value), key);
+        throw!(
+            "Cannot read properties of {} (reading '{}')",
+            js::to_js_string(value),
+            key
+        );
     }
     Ok(value.get(key))
 }
 
 /// `/^(.*:t\d+):r(\d+)c(\d+)(~\d+)?$/` with the tilde suffix allowed or not.
 fn match_cell_story(story: &str, allow_tilde: bool) -> Option<(String, String, String)> {
-    if story.chars().any(|c| matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}')) {
+    if story
+        .chars()
+        .any(|c| matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}'))
+    {
         return None;
     }
     let colon = story.rfind(':')?;
@@ -186,7 +285,13 @@ fn match_cell_story(story: &str, allow_tilde: bool) -> Option<(String, String, S
 // ----- ported functions -----
 
 /// `buildParagraphContent` (src/yrs/yrsToDocument.ts:1455).
-pub(crate) fn build_paragraph_content(items: &Js, recovery: &Js, format: &dyn Fn(&Js) -> Result<Js>, revision_ids: &Js, in_control: bool) -> Result<Js> {
+pub(crate) fn build_paragraph_content(
+    items: &Js,
+    recovery: &Js,
+    format: &dyn Fn(&Js) -> Result<Js>,
+    revision_ids: &Js,
+    in_control: bool,
+) -> Result<Js> {
     let items = restore_projected_field_results(items, recovery, format)?;
     let content = Js::new_arr(Vec::new());
     let mut current_run: Option<Js> = None;
@@ -208,7 +313,9 @@ pub(crate) fn build_paragraph_content(items: &Js, recovery: &Js, format: &dyn Fn
 
     for item in items.items() {
         let attributes = item.get("attributes");
-        if item.get("kind").as_str() == Some("embed") && item.get("embedKind").as_str() == Some("noteRef") {
+        if item.get("kind").as_str() == Some("embed")
+            && item.get("embedKind").as_str() == Some("noteRef")
+        {
             flush_run(&content, &mut current_run, &mut current_formatting_key);
             flush_hyperlink(&content, &mut current_hyperlink);
             let note = ordinary_content_for_item(&item, recovery, format)?;
@@ -219,7 +326,11 @@ pub(crate) fn build_paragraph_content(items: &Js, recovery: &Js, format: &dyn Fn
         }
 
         let raw = attributes.get("ins").nullish_or(attributes.get("del"));
-        let kind = if attributes.get("ins").truthy() { "insertion" } else { "deletion" };
+        let kind = if attributes.get("ins").truthy() {
+            "insertion"
+        } else {
+            "deletion"
+        };
         let mapped = mapped_revision_id(&raw, &Js::from(kind), revision_ids)?;
         let revision = tracked_info(&raw, false, mapped)?;
         if revision.truthy() {
@@ -233,9 +344,15 @@ pub(crate) fn build_paragraph_content(items: &Js, recovery: &Js, format: &dyn Fn
             if is_tracked_wrapper(&previous)?
                 && is_tracked_wrapper(&tracked)?
                 && previous.get("type").strict_eq(&tracked.get("type"))
-                && previous.path(&["info", "id"]).strict_eq(&tracked.path(&["info", "id"]))
-                && previous.path(&["info", "author"]).strict_eq(&tracked.path(&["info", "author"]))
-                && previous.path(&["info", "date"]).strict_eq(&tracked.path(&["info", "date"]))
+                && previous
+                    .path(&["info", "id"])
+                    .strict_eq(&tracked.path(&["info", "id"]))
+                && previous
+                    .path(&["info", "author"])
+                    .strict_eq(&tracked.path(&["info", "author"]))
+                && previous
+                    .path(&["info", "date"])
+                    .strict_eq(&tracked.path(&["info", "date"]))
             {
                 let target = previous.get("content");
                 for child in tracked.get("content").items() {
@@ -261,17 +378,26 @@ pub(crate) fn build_paragraph_content(items: &Js, recovery: &Js, format: &dyn Fn
                 }
             });
             let history = as_object(&attributes.get("hyperlink"))?.get("history");
-            let link_history = if history.is_bool() { history } else { Js::Undefined };
+            let link_history = if history.is_bool() {
+                history
+            } else {
+                Js::Undefined
+            };
             let differs = match (&current_hyperlink, &current_key) {
                 (Some(link), Some(key)) => {
-                    !key.strict_eq(&Js::from(link_key.as_str())) || !link.get("history").strict_eq(&link_history)
+                    !key.strict_eq(&Js::from(link_key.as_str()))
+                        || !link.get("history").strict_eq(&link_history)
                 }
                 _ => true,
             };
             if differs {
                 flush_hyperlink(&content, &mut current_hyperlink);
                 let created = create_hyperlink(&attributes)?;
-                current_hyperlink = if created.truthy() { Some(created) } else { None };
+                current_hyperlink = if created.truthy() {
+                    Some(created)
+                } else {
+                    None
+                };
             }
             if let Some(link) = &current_hyperlink {
                 add_to_hyperlink(link, &item, recovery, format)?;
@@ -342,7 +468,10 @@ pub(crate) fn marks_key_to_yrs_attrs(marks_key: Option<&str>) -> Result<Js> {
                 "date" => value.get("date"),
                 "isMovePair" => value.get("isMovePair"),
             };
-            attrs.set(if name == "insertion" { "ins" } else { "del" }, drop_nulls(&info)?);
+            attrs.set(
+                if name == "insertion" { "ins" } else { "del" },
+                drop_nulls(&info)?,
+            );
         } else {
             attrs.set(name, drop_nulls(&value)?);
         }
@@ -384,13 +513,19 @@ pub(crate) fn boundary_content(boundary: &Js, formatting: &Js) -> Result<Js> {
     for entry in breaks.items() {
         let at = js_min(js_max(num(&entry.get("offset")), cursor), length);
         if at > cursor {
-            concat_arr(&mut content, &run_content_for_text(&js::slice16(&text, cursor, Some(at)), formatting)?);
+            concat_arr(
+                &mut content,
+                &run_content_for_text(&js::slice16(&text, cursor, Some(at)), formatting)?,
+            );
         }
         content.push(obj! { "type" => "break", "breakType" => entry.get("type") });
         cursor = at;
     }
     if cursor < length {
-        concat_arr(&mut content, &run_content_for_text(&js::slice16(&text, cursor, None), formatting)?);
+        concat_arr(
+            &mut content,
+            &run_content_for_text(&js::slice16(&text, cursor, None), formatting)?,
+        );
     }
     Ok(Js::new_arr(content))
 }
@@ -409,7 +544,11 @@ pub(crate) fn source_break_boundaries(paragraph: &Js) -> Result<Js> {
             let t = ty(&child);
             if matches!(
                 t.as_str(),
-                "commentRangeStart" | "commentRangeEnd" | "bookmarkStart" | "bookmarkEnd" | "rawXml"
+                "commentRangeStart"
+                    | "commentRangeEnd"
+                    | "bookmarkStart"
+                    | "bookmarkEnd"
+                    | "rawXml"
             ) {
                 continue;
             }
@@ -424,9 +563,14 @@ pub(crate) fn source_break_boundaries(paragraph: &Js) -> Result<Js> {
             } else if t == "commentReference" {
                 text.push('\u{FFFC}');
             } else if t == "break"
-                && matches!(entry.get("breakType").as_str(), Some("page") | Some("column"))
+                && matches!(
+                    entry.get("breakType").as_str(),
+                    Some("page") | Some("column")
+                )
             {
-                breaks.push(obj! { "offset" => js::len16(&text) as f64, "type" => entry.get("breakType") });
+                breaks.push(
+                    obj! { "offset" => js::len16(&text) as f64, "type" => entry.get("breakType") },
+                );
             } else {
                 return Ok(Js::new_arr(Vec::new()));
             }
@@ -439,7 +583,9 @@ pub(crate) fn source_break_boundaries(paragraph: &Js) -> Result<Js> {
 fn boundary_sources(boundaries: &Js) -> Result<Js> {
     let mut source = Vec::new();
     for boundary in boundaries.items() {
-        source.push(obj! { "type" => "run", "content" => boundary_content(&boundary, &Js::new_obj())? });
+        source.push(
+            obj! { "type" => "run", "content" => boundary_content(&boundary, &Js::new_obj())? },
+        );
     }
     Ok(Js::new_arr(source))
 }
@@ -448,14 +594,19 @@ fn boundary_sources(boundaries: &Js) -> Result<Js> {
 pub(crate) fn live_run_boundaries(boundaries: &Js, live: &Js) -> Result<Js> {
     let mut count = 0usize;
     for boundary in boundaries.items() {
-        count += if note_mark_content(&boundary)?.truthy() { 0 } else { boundary.get("breaks").len() };
+        count += if note_mark_content(&boundary)?.truthy() {
+            0
+        } else {
+            boundary.get("breaks").len()
+        };
     }
     if count == 0 {
         return Ok(boundaries.clone());
     }
     let source = boundary_sources(boundaries)?;
     let hoisted = count as i64
-        - trailing_block_breaks(&obj! { "type" => "paragraph", "content" => source.clone() })?.len() as i64;
+        - trailing_block_breaks(&obj! { "type" => "paragraph", "content" => source.clone() })?.len()
+            as i64;
     let visible = includes_str(&flow_tokens(&source, &Js::new_arr(Vec::new()))?, "visible");
     let leading_live = live.get("leading");
     let trailing_live = live.get("trailing");
@@ -528,13 +679,22 @@ pub(crate) fn paragraph_breaks_are_live(content: &Js, live: &Js) -> Result<bool>
 }
 
 /// `restoreRecordedBreaks` (src/yrs/yrsToDocument.ts:1685).
-pub(crate) fn restore_recorded_breaks(content: &Js, items: &Js, boundaries: &Js, live_breaks: &Js) -> Result<Js> {
+pub(crate) fn restore_recorded_breaks(
+    content: &Js,
+    items: &Js,
+    boundaries: &Js,
+    live_breaks: &Js,
+) -> Result<Js> {
     let mut breaks: Vec<(f64, Js)> = Vec::new();
     let mut start = 0.0;
     for boundary in boundaries.items() {
         let mut cursor = 0.0;
         let text_len = js::len16(&js::to_js_string(&boundary.get("text"))) as f64;
-        let entries = if note_mark_content(&boundary)?.truthy() { Vec::new() } else { boundary.get("breaks").items() };
+        let entries = if note_mark_content(&boundary)?.truthy() {
+            Vec::new()
+        } else {
+            boundary.get("breaks").items()
+        };
         for entry in entries {
             cursor = js_min(js_max(num(&entry.get("offset")), cursor), text_len);
             breaks.push((start + cursor, entry.get("type")));
@@ -545,13 +705,16 @@ pub(crate) fn restore_recorded_breaks(content: &Js, items: &Js, boundaries: &Js,
         return Ok(content.clone());
     }
     let source = boundary_sources(boundaries)?;
-    let trailing = trailing_block_breaks(&obj! { "type" => "paragraph", "content" => source.clone() })?;
+    let trailing =
+        trailing_block_breaks(&obj! { "type" => "paragraph", "content" => source.clone() })?;
     let hoisted = breaks.len() as i64 - trailing.len() as i64;
     let visible = includes_str(&flow_tokens(&source, &Js::new_arr(Vec::new()))?, "visible");
     let kept: Vec<(f64, Js)> = breaks
         .into_iter()
         .enumerate()
-        .filter(|(index, entry)| *index as i64 >= hoisted || (visible && entry.1.as_str() == Some("page")))
+        .filter(|(index, entry)| {
+            *index as i64 >= hoisted || (visible && entry.1.as_str() == Some("page"))
+        })
         .map(|(_, entry)| entry)
         .collect();
     let recorded: Vec<u16> = boundaries
@@ -573,7 +736,9 @@ pub(crate) fn restore_recorded_breaks(content: &Js, items: &Js, boundaries: &Js,
         prefix += 1;
     }
     let mut suffix = 0usize;
-    while suffix < shared - prefix && recorded[recorded.len() - 1 - suffix] == live[live.len() - 1 - suffix] {
+    while suffix < shared - prefix
+        && recorded[recorded.len() - 1 - suffix] == live[live.len() - 1 - suffix]
+    {
         suffix += 1;
     }
     let mut length = 0.0;
@@ -599,29 +764,58 @@ pub(crate) fn restore_recorded_breaks(content: &Js, items: &Js, boundaries: &Js,
         .collect();
     let placed = insert_boundaries(content, &Js::new_arr(marks), &|boundary| {
         let id = num(&boundary.get("id")) as usize;
-        Ok(obj! { "type" => "run", "content" => arr![obj! { "type" => "break", "breakType" => kept[id].1.clone() }] })
+        Ok(
+            obj! { "type" => "run", "content" => arr![obj! { "type" => "break", "breakType" => kept[id].1.clone() }] },
+        )
     })?;
-    let placed_trailing = trailing_block_breaks(&obj! { "type" => "paragraph", "content" => placed.clone() })?;
+    let placed_trailing =
+        trailing_block_breaks(&obj! { "type" => "paragraph", "content" => placed.clone() })?;
     let same = placed_trailing.len() == trailing.len()
-        && placed_trailing.items().iter().enumerate().all(|(i, kind)| kind.strict_eq(&trailing.at(i)));
-    Ok(if same && paragraph_breaks_are_live(&placed, live_breaks)? { placed } else { content.clone() })
+        && placed_trailing
+            .items()
+            .iter()
+            .enumerate()
+            .all(|(i, kind)| kind.strict_eq(&trailing.at(i)));
+    Ok(
+        if same && paragraph_breaks_are_live(&placed, live_breaks)? {
+            placed
+        } else {
+            content.clone()
+        },
+    )
 }
 
 /// `restoreOriginalRuns` (src/yrs/yrsToDocument.ts:1747).
-pub(crate) fn restore_original_runs(content: &Js, items: &Js, boundaries: &Js, base_paragraph: &Js, live_breaks: &Js) -> Result<Js> {
+pub(crate) fn restore_original_runs(
+    content: &Js,
+    items: &Js,
+    boundaries: &Js,
+    base_paragraph: &Js,
+    live_breaks: &Js,
+) -> Result<Js> {
     if boundaries.len() == 0 {
         let source = source_break_boundaries(base_paragraph)?;
-        return restore_recorded_breaks(content, items, &live_run_boundaries(&source, live_breaks)?, live_breaks);
+        return restore_recorded_breaks(
+            content,
+            items,
+            &live_run_boundaries(&source, live_breaks)?,
+            live_breaks,
+        );
     }
     let recorded = live_run_boundaries(boundaries, live_breaks)?;
     let fallback = || restore_recorded_breaks(content, items, &recorded, live_breaks);
     let all_text_runs = content.items().iter().all(|child| {
-        type_is(child, "run") && child.get("content").items().iter().all(|e| type_is(e, "text"))
+        type_is(child, "run")
+            && child
+                .get("content")
+                .items()
+                .iter()
+                .all(|e| type_is(e, "text"))
     });
-    let odd_item = items
-        .items()
-        .iter()
-        .any(|item| item.get("kind").as_str() != Some("text") || item.path(&["attributes", "hyperlink"]).truthy());
+    let odd_item = items.items().iter().any(|item| {
+        item.get("kind").as_str() != Some("text")
+            || item.path(&["attributes", "hyperlink"]).truthy()
+    });
     let note_with_text = recorded
         .items()
         .iter()
@@ -632,9 +826,19 @@ pub(crate) fn restore_original_runs(content: &Js, items: &Js, boundaries: &Js, b
     let full_text: String = items
         .items()
         .iter()
-        .map(|item| if item.get("kind").as_str() == Some("text") { js::to_js_string(&item.get("text")) } else { String::new() })
+        .map(|item| {
+            if item.get("kind").as_str() == Some("text") {
+                js::to_js_string(&item.get("text"))
+            } else {
+                String::new()
+            }
+        })
         .collect();
-    let recorded_text: String = recorded.items().iter().map(|b| js::to_js_string(&b.get("text"))).collect();
+    let recorded_text: String = recorded
+        .items()
+        .iter()
+        .map(|b| js::to_js_string(&b.get("text")))
+        .collect();
     if full_text != recorded_text {
         return fallback();
     }
@@ -657,7 +861,9 @@ pub(crate) fn restore_original_runs(content: &Js, items: &Js, boundaries: &Js, b
             if item.get("kind").as_str() != Some("text") {
                 return fallback();
             }
-            if stable_stringify_without(&item.get("attributes"), &non_formatting)? != stable_stringify(&expected)? {
+            if stable_stringify_without(&item.get("attributes"), &non_formatting)?
+                != stable_stringify(&expected)?
+            {
                 return fallback();
             }
             let item_len = js::len16(&js::to_js_string(&item.get("text")));
@@ -696,8 +902,14 @@ pub(crate) fn restore_original_runs(content: &Js, items: &Js, boundaries: &Js, b
         };
         let formatting = if source_matches {
             boundary.get("formatting").with(&[
-                ("fontFamily", source_items[index].path(&["formatting", "fontFamily"])),
-                ("language", source_items[index].path(&["formatting", "language"])),
+                (
+                    "fontFamily",
+                    source_items[index].path(&["formatting", "fontFamily"]),
+                ),
+                (
+                    "language",
+                    source_items[index].path(&["formatting", "language"]),
+                ),
             ])
         } else {
             boundary.get("formatting")
@@ -711,7 +923,11 @@ pub(crate) fn restore_original_runs(content: &Js, items: &Js, boundaries: &Js, b
         restored.push(run);
     }
     let restored = Js::new_arr(restored);
-    Ok(if paragraph_breaks_are_live(&restored, live_breaks)? { restored } else { content.clone() })
+    Ok(if paragraph_breaks_are_live(&restored, live_breaks)? {
+        restored
+    } else {
+        content.clone()
+    })
 }
 
 /// `runContentLength` (src/yrs/yrsToDocument.ts:1819).
@@ -726,9 +942,19 @@ pub(crate) fn run_content_length(content: &Js) -> Result<f64> {
     let break_type = content.get("breakType");
     if matches!(
         t.as_str(),
-        "tab" | "softHyphen" | "noBreakHyphen" | "footnoteRef" | "endnoteRef" | "horizontalRule"
-            | "commentReference" | "drawing" | "shape" | "chart" | "opaqueDrawing"
-    ) || (t == "break" && (break_type.is_undefined() || break_type.as_str() == Some("textWrapping")))
+        "tab"
+            | "softHyphen"
+            | "noBreakHyphen"
+            | "footnoteRef"
+            | "endnoteRef"
+            | "horizontalRule"
+            | "commentReference"
+            | "drawing"
+            | "shape"
+            | "chart"
+            | "opaqueDrawing"
+    ) || (t == "break"
+        && (break_type.is_undefined() || break_type.as_str() == Some("textWrapping")))
     {
         return Ok(1.0);
     }
@@ -749,7 +975,16 @@ pub(crate) fn link_child_length(child: &Js) -> Result<f64> {
     if type_is(child, "run") {
         return run_text_length(child);
     }
-    Ok(if matches!(ty(child).as_str(), "simpleField" | "complexField" | "inlineSdt" | "mathEquation") { 1.0 } else { 0.0 })
+    Ok(
+        if matches!(
+            ty(child).as_str(),
+            "simpleField" | "complexField" | "inlineSdt" | "mathEquation"
+        ) {
+            1.0
+        } else {
+            0.0
+        },
+    )
 }
 
 /// `paragraphContentLength` (src/yrs/yrsToDocument.ts:1862).
@@ -758,7 +993,11 @@ pub(crate) fn paragraph_content_length(content: &Js) -> Result<f64> {
         "run" => run_text_length(content),
         "hyperlink" => {
             let mut sum = 0.0;
-            for child in content.get("structuredChildren").nullish_or(content.get("children")).items() {
+            for child in content
+                .get("structuredChildren")
+                .nullish_or(content.get("children"))
+                .items()
+            {
                 sum += link_child_length(&child)?;
             }
             Ok(sum)
@@ -787,7 +1026,12 @@ pub(crate) fn paragraph_content_length(content: &Js) -> Result<f64> {
 }
 
 /// `splitItems` (src/yrs/yrsToDocument.ts:1895).
-pub(crate) fn split_items(items: &Js, at: f64, length: &dyn Fn(&Js) -> Result<f64>, split: &dyn Fn(&Js, f64) -> Result<Js>) -> Result<Js> {
+pub(crate) fn split_items(
+    items: &Js,
+    at: f64,
+    length: &dyn Fn(&Js) -> Result<f64>,
+    split: &dyn Fn(&Js, f64) -> Result<Js>,
+) -> Result<Js> {
     let mut left = Vec::new();
     let mut right = Vec::new();
     let mut offset = 0.0;
@@ -839,7 +1083,10 @@ pub(crate) fn link_part(link: &Js, children: &Js) -> Result<Js> {
             .collect(),
     );
     Ok(if link.get("structuredChildren").truthy() {
-        link.with(&[("children", legacy), ("structuredChildren", children.clone())])
+        link.with(&[
+            ("children", legacy),
+            ("structuredChildren", children.clone()),
+        ])
     } else {
         link.with(&[("children", legacy)])
     })
@@ -849,28 +1096,53 @@ fn split_halves(content: &Js, parts: &Js) -> Js {
     if !parts.truthy() {
         return Js::Null;
     }
-    let half = |p: Js| if p.len() > 0 { content.with(&[("content", p)]) } else { Js::Null };
+    let half = |p: Js| {
+        if p.len() > 0 {
+            content.with(&[("content", p)])
+        } else {
+            Js::Null
+        }
+    };
     arr![half(parts.at(0)), half(parts.at(1))]
 }
 
 /// `splitContent` (src/yrs/yrsToDocument.ts:1944).
 pub(crate) fn split_content(content: &Js, at: f64) -> Result<Js> {
     if type_is(content, "run") {
-        let parts = split_items(&content.get("content"), at, &run_content_length, &split_run_content)?;
+        let parts = split_items(
+            &content.get("content"),
+            at,
+            &run_content_length,
+            &split_run_content,
+        )?;
         return Ok(split_halves(content, &parts));
     }
     if type_is(content, "hyperlink") {
-        let children = content.get("structuredChildren").nullish_or(content.get("children"));
+        let children = content
+            .get("structuredChildren")
+            .nullish_or(content.get("children"));
         let parts = split_items(&children, at, &link_child_length, &|child, offset| {
-            if type_is(child, "run") { split_content(child, offset) } else { Ok(Js::Null) }
+            if type_is(child, "run") {
+                split_content(child, offset)
+            } else {
+                Ok(Js::Null)
+            }
         })?;
         if !parts.truthy() {
             return Ok(Js::Null);
         }
-        return Ok(arr![link_part(content, &parts.at(0))?, link_part(content, &parts.at(1))?]);
+        return Ok(arr![
+            link_part(content, &parts.at(0))?,
+            link_part(content, &parts.at(1))?
+        ]);
     }
     if is_tracked_wrapper(content)? {
-        let parts = split_items(&content.get("content"), at, &paragraph_content_length, &split_content)?;
+        let parts = split_items(
+            &content.get("content"),
+            at,
+            &paragraph_content_length,
+            &split_content,
+        )?;
         return Ok(split_halves(content, &parts));
     }
     Ok(Js::Null)
@@ -878,12 +1150,22 @@ pub(crate) fn split_content(content: &Js, at: f64) -> Result<Js> {
 
 /// `insertBoundaries` (src/yrs/yrsToDocument.ts:1980). Callers wanting the TS default
 /// `makeMarker` pass `&comment_marker_default`.
-pub(crate) fn insert_boundaries(content: &Js, boundaries: &Js, make_marker: &dyn Fn(&Js) -> Result<Js>) -> Result<Js> {
+pub(crate) fn insert_boundaries(
+    content: &Js,
+    boundaries: &Js,
+    make_marker: &dyn Fn(&Js) -> Result<Js>,
+) -> Result<Js> {
     if boundaries.len() == 0 {
         return Ok(content.clone());
     }
     let list = boundaries.items();
-    let key = |b: &Js| format!("{}:{}", js::to_js_string(&b.get("offset")), js::to_js_string(&b.get("id")));
+    let key = |b: &Js| {
+        format!(
+            "{}:{}",
+            js::to_js_string(&b.get("offset")),
+            js::to_js_string(&b.get("id"))
+        )
+    };
     let carets: HashSet<String> = list
         .iter()
         .filter(|b| {
@@ -897,7 +1179,13 @@ pub(crate) fn insert_boundaries(content: &Js, boundaries: &Js, make_marker: &dyn
         .map(|b| key(b))
         .collect();
     let rank = |b: &Js| -> f64 {
-        if carets.contains(&key(b)) { 1.0 } else if b.get("kind").as_str() == Some("end") { 0.0 } else { 2.0 }
+        if carets.contains(&key(b)) {
+            1.0
+        } else if b.get("kind").as_str() == Some("end") {
+            0.0
+        } else {
+            2.0
+        }
     };
     let mut sorted = list.clone();
     sorted.sort_by(|l, r| {
@@ -910,7 +1198,13 @@ pub(crate) fn insert_boundaries(content: &Js, boundaries: &Js, make_marker: &dyn
         }
         if c == 0.0 || c.is_nan() {
             let (lk, rk) = (l.get("kind"), r.get("kind"));
-            c = if lk.strict_eq(&rk) { 0.0 } else if lk.as_str() == Some("start") { -1.0 } else { 1.0 };
+            c = if lk.strict_eq(&rk) {
+                0.0
+            } else if lk.as_str() == Some("start") {
+                -1.0
+            } else {
+                1.0
+            };
         }
         if c < 0.0 {
             std::cmp::Ordering::Less
@@ -1079,7 +1373,10 @@ pub(crate) fn paragraph_attrs(properties: &Js) -> Result<Js> {
     let attrs = paragraph_attr_defaults_b();
     attrs.assign(properties);
     attrs.set("styleId", properties.get("pStyle").nullish_or(Js::Null));
-    attrs.set("_sectionProperties", properties.get("sectPr").nullish_or(Js::Null));
+    attrs.set(
+        "_sectionProperties",
+        properties.get("sectPr").nullish_or(Js::Null),
+    );
     attrs.delete("pStyle");
     attrs.delete("sectPr");
     Ok(attrs)
@@ -1120,12 +1417,20 @@ pub(crate) fn source_runs(content: &Js, into_fields: bool) -> Result<Js> {
 
 /// `s[i]`: `undefined` (None) out of range.
 fn unit(s: &[u16], i: i64) -> Option<u16> {
-    if i >= 0 && (i as usize) < s.len() { Some(s[i as usize]) } else { None }
+    if i >= 0 && (i as usize) < s.len() {
+        Some(s[i as usize])
+    } else {
+        None
+    }
 }
 
 /// JS `slice` bound semantics: negative counts from the end, then clamped.
 fn rel(v: i64, len: usize) -> usize {
-    if v < 0 { (len as i64 + v).max(0) as usize } else { (v as usize).min(len) }
+    if v < 0 {
+        (len as i64 + v).max(0) as usize
+    } else {
+        (v as usize).min(len)
+    }
 }
 
 fn edit_midpoint16(original: &[u16], current: &[u16]) -> Option<(i64, i64)> {
@@ -1139,15 +1444,23 @@ fn edit_midpoint16(original: &[u16], current: &[u16]) -> Option<(i64, i64)> {
     backward[(offset + 1) as usize] = 0;
     let delta = olen - clen;
     let odd = delta % 2 != 0;
-    let get = |a: &Vec<i64>, i: i64| -> Option<i64> { if i >= 0 && (i as usize) < a.len() { Some(a[i as usize]) } else { None } };
-    let (mut forward_start, mut forward_end, mut backward_start, mut backward_end) = (0i64, 0i64, 0i64, 0i64);
+    let get = |a: &Vec<i64>, i: i64| -> Option<i64> {
+        if i >= 0 && (i as usize) < a.len() {
+            Some(a[i as usize])
+        } else {
+            None
+        }
+    };
+    let (mut forward_start, mut forward_end, mut backward_start, mut backward_end) =
+        (0i64, 0i64, 0i64, 0i64);
     let mut distance = 0i64;
     while distance <= distance_limit {
         let mut diagonal = -distance + forward_start;
         while diagonal <= distance - forward_end {
             let index = offset + diagonal;
             let mut x = if diagonal == -distance
-                || (diagonal != distance && forward[(index - 1) as usize] < forward[(index + 1) as usize])
+                || (diagonal != distance
+                    && forward[(index - 1) as usize] < forward[(index + 1) as usize])
             {
                 forward[(index + 1) as usize]
             } else {
@@ -1176,14 +1489,18 @@ fn edit_midpoint16(original: &[u16], current: &[u16]) -> Option<(i64, i64)> {
         while diagonal <= distance - backward_end {
             let index = offset + diagonal;
             let mut x = if diagonal == -distance
-                || (diagonal != distance && backward[(index - 1) as usize] < backward[(index + 1) as usize])
+                || (diagonal != distance
+                    && backward[(index - 1) as usize] < backward[(index + 1) as usize])
             {
                 backward[(index + 1) as usize]
             } else {
                 backward[(index - 1) as usize] + 1
             };
             let mut y = x - diagonal;
-            while x < olen && y < clen && unit(original, olen - x - 1) == unit(current, clen - y - 1) {
+            while x < olen
+                && y < clen
+                && unit(original, olen - x - 1) == unit(current, clen - y - 1)
+            {
                 x += 1;
                 y += 1;
             }
@@ -1208,15 +1525,23 @@ fn edit_midpoint16(original: &[u16], current: &[u16]) -> Option<(i64, i64)> {
 
 /// `editMidpoint` (src/yrs/yrsToDocument.ts:2143).
 pub(crate) fn edit_midpoint(original: &str, current: &str) -> Result<Js> {
-    Ok(match edit_midpoint16(&js::utf16(original), &js::utf16(current)) {
-        Some((x, y)) => arr![x as f64, y as f64],
-        None => Js::Null,
-    })
+    Ok(
+        match edit_midpoint16(&js::utf16(original), &js::utf16(current)) {
+            Some((x, y)) => arr![x as f64, y as f64],
+            None => Js::Null,
+        },
+    )
 }
 
 /// `(original, current, length)` of each `SourceTextMatch`.
 fn source_text_matches16(original: &[u16], current: &[u16]) -> Vec<(usize, usize, usize)> {
-    fn visit(before: &[u16], after: &[u16], source_offset: usize, live_offset: usize, matches: &mut Vec<(usize, usize, usize)>) {
+    fn visit(
+        before: &[u16],
+        after: &[u16],
+        source_offset: usize,
+        live_offset: usize,
+        matches: &mut Vec<(usize, usize, usize)>,
+    ) {
         let shared = before.len().min(after.len());
         let mut prefix = 0;
         while prefix < shared && before[prefix] == after[prefix] {
@@ -1226,7 +1551,9 @@ fn source_text_matches16(original: &[u16], current: &[u16]) -> Vec<(usize, usize
             matches.push((source_offset, live_offset, prefix));
         }
         let mut suffix = 0;
-        while suffix < shared - prefix && before[before.len() - suffix - 1] == after[after.len() - suffix - 1] {
+        while suffix < shared - prefix
+            && before[before.len() - suffix - 1] == after[after.len() - suffix - 1]
+        {
             suffix += 1;
         }
         let old_middle = &before[prefix..before.len() - suffix];
@@ -1234,8 +1561,16 @@ fn source_text_matches16(original: &[u16], current: &[u16]) -> Vec<(usize, usize
         if !old_middle.is_empty() && !new_middle.is_empty() {
             if let Some((s0, s1)) = edit_midpoint16(old_middle, new_middle) {
                 let (a, b) = (rel(s0, old_middle.len()), rel(s1, new_middle.len()));
-                if (s0 > 0 || s1 > 0) && (s0 < old_middle.len() as i64 || s1 < new_middle.len() as i64) {
-                    visit(&old_middle[..a], &new_middle[..b], source_offset + prefix, live_offset + prefix, matches);
+                if (s0 > 0 || s1 > 0)
+                    && (s0 < old_middle.len() as i64 || s1 < new_middle.len() as i64)
+                {
+                    visit(
+                        &old_middle[..a],
+                        &new_middle[..b],
+                        source_offset + prefix,
+                        live_offset + prefix,
+                        matches,
+                    );
                     visit(
                         &old_middle[a..],
                         &new_middle[b..],
@@ -1247,7 +1582,11 @@ fn source_text_matches16(original: &[u16], current: &[u16]) -> Vec<(usize, usize
             }
         }
         if suffix > 0 {
-            matches.push((source_offset + before.len() - suffix, live_offset + after.len() - suffix, suffix));
+            matches.push((
+                source_offset + before.len() - suffix,
+                live_offset + after.len() - suffix,
+                suffix,
+            ));
         }
     }
     let mut matches = Vec::new();
@@ -1271,7 +1610,10 @@ pub(crate) fn preserve_source_run_formatting(items: &Js, sources: &Js) -> Result
         return Ok(items.clone());
     }
     let source_list = sources.items();
-    let original: Vec<u16> = source_list.iter().flat_map(|s| js::utf16(&js::to_js_string(&s.get("text")))).collect();
+    let original: Vec<u16> = source_list
+        .iter()
+        .flat_map(|s| js::utf16(&js::to_js_string(&s.get("text"))))
+        .collect();
     let mut current: Vec<u16> = Vec::new();
     for item in items.items() {
         if item.get("kind").as_str() == Some("text") {
@@ -1300,14 +1642,22 @@ pub(crate) fn preserve_source_run_formatting(items: &Js, sources: &Js) -> Result
             source_end = mo + ml;
             live_end = mc + ml;
         }
-        if offset == source_end { live_end } else { current_len }
+        if offset == source_end {
+            live_end
+        } else {
+            current_len
+        }
     };
     let mut source_offset = 0usize;
     let mut spans: Vec<(usize, usize, Js)> = Vec::new();
     for (index, source) in source_list.iter().enumerate() {
         let start = mapped(source_offset);
         source_offset += js::len16(&js::to_js_string(&source.get("text")));
-        let end = if index + 1 == source_list.len() { current_len } else { mapped(source_offset) };
+        let end = if index + 1 == source_list.len() {
+            current_len
+        } else {
+            mapped(source_offset)
+        };
         if end > start {
             spans.push((start, end, source.get("formatting")));
         }
@@ -1331,7 +1681,9 @@ pub(crate) fn preserve_source_run_formatting(items: &Js, sources: &Js) -> Result
                     }
                 }
             }
-            let attributes = item.get("attributes").with(&[("_sourceRunFormatting", source)]);
+            let attributes = item
+                .get("attributes")
+                .with(&[("_sourceRunFormatting", source)]);
             out.push(if is_text {
                 let sliced = js::slice16(
                     &text,
@@ -1356,7 +1708,11 @@ pub(crate) fn restore_line_breaks(content: &Js, base: &Js) -> Result<()> {
     let source = paragraph_chart_runs(&base.get("content"))?;
     let target = paragraph_chart_runs(content)?;
     let text = |runs: &Js| -> Result<String> {
-        Ok(source_runs(runs, false)?.items().iter().map(|r| js::to_js_string(&r.get("text"))).collect())
+        Ok(source_runs(runs, false)?
+            .items()
+            .iter()
+            .map(|r| js::to_js_string(&r.get("text")))
+            .collect())
     };
     let matches = source_text_matches16(&js::utf16(&text(&source)?), &js::utf16(&text(&target)?));
     let mut breaks: HashMap<i64, Js> = HashMap::new();
@@ -1366,7 +1722,9 @@ pub(crate) fn restore_line_breaks(content: &Js, base: &Js) -> Result<()> {
             let len = run_content_length(&entry)?;
             if type_is(&entry, "break") && len == 1.0 {
                 let o = offset as usize;
-                if let Some(&(mo, mc, _)) = matches.iter().find(|&&(mo, _, ml)| mo <= o && o < mo + ml) {
+                if let Some(&(mo, mc, _)) =
+                    matches.iter().find(|&&(mo, _, ml)| mo <= o && o < mo + ml)
+                {
                     breaks.insert((mc + o - mo) as i64, entry.clone());
                 }
             }
@@ -1381,7 +1739,9 @@ pub(crate) fn restore_line_breaks(content: &Js, base: &Js) -> Result<()> {
             let len = run_content_length(&entry)?;
             offset += len;
             next.push(match original {
-                Some(original) if type_is(&entry, "break") && len == 1.0 && original.truthy() => original.spread(),
+                Some(original) if type_is(&entry, "break") && len == 1.0 && original.truthy() => {
+                    original.spread()
+                }
                 _ => entry,
             });
         }
@@ -1391,7 +1751,18 @@ pub(crate) fn restore_line_breaks(content: &Js, base: &Js) -> Result<()> {
 }
 
 /// `paragraphFromStory` (src/yrs/yrsToDocument.ts:2305).
-pub(crate) fn paragraph_from_story(para_id: &str, properties: &Js, items: &Js, comment_boundaries: &Js, base_paragraph: &Js, live_breaks: &Js, recovery: &Js, format: &dyn Fn(&Js) -> Result<Js>, revision_ids: &Js, inherited: &Js) -> Result<Js> {
+pub(crate) fn paragraph_from_story(
+    para_id: &str,
+    properties: &Js,
+    items: &Js,
+    comment_boundaries: &Js,
+    base_paragraph: &Js,
+    live_breaks: &Js,
+    recovery: &Js,
+    format: &dyn Fn(&Js) -> Result<Js>,
+    revision_ids: &Js,
+    inherited: &Js,
+) -> Result<Js> {
     let attrs = paragraph_attrs(properties)?;
     let has_base = base_paragraph.truthy();
     if has_base && attrs.get("_originalFormatting").truthy() {
@@ -1405,19 +1776,31 @@ pub(crate) fn paragraph_from_story(para_id: &str, properties: &Js, items: &Js, c
         } else {
             Js::Undefined
         };
-        attrs.set("_originalFormatting", original.with(&[("runProperties", run_properties)]));
+        attrs.set(
+            "_originalFormatting",
+            original.with(&[("runProperties", run_properties)]),
+        );
     }
     let boundaries_attr = attrs.get("_originalRunBoundaries");
     let sources = if has_base {
         source_runs(&base_paragraph.get("content"), false)?
     } else if boundaries_attr.is_arr() {
         boundaries_attr.clone()
-    } else if attrs.path(&["_originalFormatting", "runProperties"]).truthy() {
+    } else if attrs
+        .path(&["_originalFormatting", "runProperties"])
+        .truthy()
+    {
         let rpr = attrs.path(&["_originalFormatting", "runProperties"]);
         let text: String = items
             .items()
             .iter()
-            .map(|item| if item.get("kind").as_str() == Some("text") { js::to_js_string(&item.get("text")) } else { "\u{fffc}".to_string() })
+            .map(|item| {
+                if item.get("kind").as_str() == Some("text") {
+                    js::to_js_string(&item.get("text"))
+                } else {
+                    "\u{fffc}".to_string()
+                }
+            })
             .collect();
         arr![obj! {
             "text" => text,
@@ -1426,11 +1809,21 @@ pub(crate) fn paragraph_from_story(para_id: &str, properties: &Js, items: &Js, c
     } else {
         Js::new_arr(Vec::new())
     };
-    let mut content = build_paragraph_content(&preserve_source_run_formatting(items, &sources)?, recovery, format, revision_ids, false)?;
+    let mut content = build_paragraph_content(
+        &preserve_source_run_formatting(items, &sources)?,
+        recovery,
+        format,
+        revision_ids,
+        false,
+    )?;
     content = restore_original_runs(
         &content,
         items,
-        &if boundaries_attr.is_arr() { boundaries_attr.clone() } else { Js::Undefined },
+        &if boundaries_attr.is_arr() {
+            boundaries_attr.clone()
+        } else {
+            Js::Undefined
+        },
         base_paragraph,
         live_breaks,
     )?;
@@ -1493,7 +1886,10 @@ pub(crate) fn paragraph_from_story(para_id: &str, properties: &Js, items: &Js, c
     if base_paragraph.get("paraIdAttribute").truthy() {
         paragraph.set("paraIdAttribute", base_paragraph.get("paraIdAttribute"));
     }
-    paragraph.set("formatting", paragraph_attrs_to_formatting(&attrs, inherited)?);
+    paragraph.set(
+        "formatting",
+        paragraph_attrs_to_formatting(&attrs, inherited)?,
+    );
     paragraph.set("content", content);
     if base_paragraph.get("renderedPageBreakBefore").truthy() {
         paragraph.set("renderedPageBreakBefore", true);
@@ -1514,7 +1910,10 @@ pub(crate) fn paragraph_from_story(para_id: &str, properties: &Js, items: &Js, c
     if properties.get("sectPr").truthy() {
         paragraph.set("sectionProperties", properties.get("sectPr"));
     } else if properties.get("sectionBreakType").truthy() {
-        paragraph.set("sectionProperties", obj! { "sectionStart" => properties.get("sectionBreakType") });
+        paragraph.set(
+            "sectionProperties",
+            obj! { "sectionStart" => properties.get("sectionBreakType") },
+        );
     }
     Ok(paragraph)
 }
@@ -1522,19 +1921,47 @@ pub(crate) fn paragraph_from_story(para_id: &str, properties: &Js, items: &Js, c
 /// `inferTableBorders` (src/yrs/yrsToDocument.ts:2414).
 pub(crate) fn infer_table_borders(rows: &Js) -> Result<Js> {
     let first_row = rows.at(0).get("cells");
-    let last_row = if rows.len() > 0 { rows.at(rows.len() - 1).get("cells") } else { Js::Undefined };
+    let last_row = if rows.len() > 0 {
+        rows.at(rows.len() - 1).get("cells")
+    } else {
+        Js::Undefined
+    };
     let corner = first_row.at(0).path(&["formatting", "borders"]);
     if !first_row.truthy() || !last_row.truthy() || !corner.truthy() {
         return Ok(Js::Undefined);
     }
-    let last_of_first = if first_row.len() > 0 { first_row.at(first_row.len() - 1) } else { Js::Undefined };
+    let last_of_first = if first_row.len() > 0 {
+        first_row.at(first_row.len() - 1)
+    } else {
+        Js::Undefined
+    };
     let entries = [
         ("top", corner.get("top")),
         ("left", corner.get("left")),
-        ("bottom", last_row.at(0).path(&["formatting", "borders", "bottom"])),
-        ("right", last_of_first.path(&["formatting", "borders", "right"])),
-        ("insideH", if rows.len() > 1 { corner.get("bottom") } else { Js::Undefined }),
-        ("insideV", if first_row.len() > 1 { corner.get("right") } else { Js::Undefined }),
+        (
+            "bottom",
+            last_row.at(0).path(&["formatting", "borders", "bottom"]),
+        ),
+        (
+            "right",
+            last_of_first.path(&["formatting", "borders", "right"]),
+        ),
+        (
+            "insideH",
+            if rows.len() > 1 {
+                corner.get("bottom")
+            } else {
+                Js::Undefined
+            },
+        ),
+        (
+            "insideV",
+            if first_row.len() > 1 {
+                corner.get("right")
+            } else {
+                Js::Undefined
+            },
+        ),
     ];
     let borders = Js::new_obj();
     for (key, value) in entries {
@@ -1542,19 +1969,30 @@ pub(crate) fn infer_table_borders(rows: &Js) -> Result<Js> {
             borders.set(key, value);
         }
     }
-    Ok(if borders.key_count() > 0 { borders } else { Js::Undefined })
+    Ok(if borders.key_count() > 0 {
+        borders
+    } else {
+        Js::Undefined
+    })
 }
 
 /// `normalizeVMergeRuns` (src/yrs/yrsToDocument.ts:2431).
 pub(crate) fn normalize_v_merge_runs(rows: &Js) -> Result<()> {
     let mut columns: IndexMap<String, Vec<(usize, Js)>> = IndexMap::new();
     for (row_index, row) in rows.items().iter().enumerate() {
-        let mut column = num(&row.path(&["formatting", "gridBefore"]).nullish_or(Js::from(0.0)));
+        let mut column = num(&row
+            .path(&["formatting", "gridBefore"])
+            .nullish_or(Js::from(0.0)));
         for cell in row.get("cells").items() {
             let start = column;
-            column += num(&cell.path(&["formatting", "gridSpan"]).nullish_or(Js::from(1.0)));
+            column += num(&cell
+                .path(&["formatting", "gridSpan"])
+                .nullish_or(Js::from(1.0)));
             if cell.path(&["formatting", "vMerge"]).truthy() {
-                columns.entry(js::num_to_string(start)).or_default().push((row_index, cell.clone()));
+                columns
+                    .entry(js::num_to_string(start))
+                    .or_default()
+                    .push((row_index, cell.clone()));
             }
         }
     }
@@ -1606,7 +2044,10 @@ pub(crate) fn normalize_v_merge_runs(rows: &Js) -> Result<()> {
 }
 
 /// `tableCellFromPayload` (src/yrs/yrsToDocument.ts:2482).
-pub(crate) fn table_cell_from_payload(context: &crate::yrs_to_document::SaveContext, payload: &Js) -> Result<Js> {
+pub(crate) fn table_cell_from_payload(
+    context: &crate::yrs_to_document::SaveContext,
+    payload: &Js,
+) -> Result<Js> {
     let attrs = context.cell_attrs(payload)?;
     let story = payload.get("story");
     let content = match story.as_str() {
@@ -1623,8 +2064,14 @@ pub(crate) fn table_cell_from_payload(context: &crate::yrs_to_document::SaveCont
         let info = tracked_info(&marker.get("info"), true, None)?
             .nullish_or(obj! { "id" => 0.0, "author" => "Unknown" });
         match marker.get("kind").as_str() {
-            Some("ins") => cell.set("structuralChange", obj! { "type" => "tableCellInsertion", "info" => info }),
-            Some("del") => cell.set("structuralChange", obj! { "type" => "tableCellDeletion", "info" => info }),
+            Some("ins") => cell.set(
+                "structuralChange",
+                obj! { "type" => "tableCellInsertion", "info" => info },
+            ),
+            Some("del") => cell.set(
+                "structuralChange",
+                obj! { "type" => "tableCellDeletion", "info" => info },
+            ),
             _ => {
                 let change = obj! { "type" => "tableCellMerge", "info" => info };
                 if marker.get("vMerge").truthy() {
@@ -1658,9 +2105,16 @@ fn grid_key(row: f64, col: f64) -> String {
 }
 
 /// `tableFromPayload` (src/yrs/yrsToDocument.ts:2513).
-pub(crate) fn table_from_payload(context: &crate::yrs_to_document::SaveContext, payload: &Js) -> Result<Js> {
+pub(crate) fn table_from_payload(
+    context: &crate::yrs_to_document::SaveContext,
+    payload: &Js,
+) -> Result<Js> {
     let rows_raw = payload.get("rows");
-    let row_payloads = if rows_raw.is_arr() { rows_raw.items() } else { Vec::new() };
+    let row_payloads = if rows_raw.is_arr() {
+        rows_raw.items()
+    } else {
+        Vec::new()
+    };
     let mut occupied: HashSet<String> = HashSet::new();
     let mut anchors: Vec<Anchor> = Vec::new();
     let mut total_columns = 0.0f64;
@@ -1669,13 +2123,21 @@ pub(crate) fn table_from_payload(context: &crate::yrs_to_document::SaveContext, 
         let row_index = row_index as f64;
         let mut column = num(&table_row_grid(&row.get("trPr"))?.get("before"));
         let cells = row.get("cells");
-        for cell_payload in if cells.is_arr() { cells.items() } else { Vec::new() } {
+        for cell_payload in if cells.is_arr() {
+            cells.items()
+        } else {
+            Vec::new()
+        } {
             while occupied.contains(&grid_key(row_index, column)) {
                 column += 1.0;
             }
             let tc_pr = cell_payload.get("tcPr").nullish_or(Js::new_obj());
-            let rowspan = as_finite_number(&tc_pr.get("rowspan"))?.filter(|v| *v != 0.0).unwrap_or(1.0);
-            let colspan = as_finite_number(&tc_pr.get("colspan"))?.filter(|v| *v != 0.0).unwrap_or(1.0);
+            let rowspan = as_finite_number(&tc_pr.get("rowspan"))?
+                .filter(|v| *v != 0.0)
+                .unwrap_or(1.0);
+            let colspan = as_finite_number(&tc_pr.get("colspan"))?
+                .filter(|v| *v != 0.0)
+                .unwrap_or(1.0);
             anchors.push(Anchor {
                 row: row_index,
                 col: column,
@@ -1725,7 +2187,11 @@ pub(crate) fn table_from_payload(context: &crate::yrs_to_document::SaveContext, 
         while col < total_columns {
             if let Some(&i) = by_start.get(&grid_key(ri, col)) {
                 let anchor = &anchors[i];
-                let formatting = anchor.cell.get("formatting").nullish_or(Js::new_obj()).spread();
+                let formatting = anchor
+                    .cell
+                    .get("formatting")
+                    .nullish_or(Js::new_obj())
+                    .spread();
                 if anchor.colspan > 1.0 {
                     formatting.set("gridSpan", anchor.colspan);
                 } else {
@@ -1739,7 +2205,11 @@ pub(crate) fn table_from_payload(context: &crate::yrs_to_document::SaveContext, 
                         formatting.delete("vMerge");
                     }
                 }
-                let formatting = if formatting.key_count() > 0 { formatting } else { Js::Undefined };
+                let formatting = if formatting.key_count() > 0 {
+                    formatting
+                } else {
+                    Js::Undefined
+                };
                 cells.push(anchor.cell.with(&[("formatting", formatting)]));
                 stories.push(Js::from(anchor.story.clone()));
                 col += anchor.colspan;
@@ -1752,17 +2222,26 @@ pub(crate) fn table_from_payload(context: &crate::yrs_to_document::SaveContext, 
                     continue;
                 }
             };
-            let formatting = covering.cell.get("formatting").nullish_or(Js::new_obj()).spread();
+            let formatting = covering
+                .cell
+                .get("formatting")
+                .nullish_or(Js::new_obj())
+                .spread();
             if covering.colspan > 1.0 {
                 formatting.set("gridSpan", covering.colspan);
             } else {
                 formatting.delete("gridSpan");
             }
             formatting.set("vMerge", "continue");
-            cells.push(covering.cell.with(&[("content", Js::new_arr(Vec::new())), ("formatting", formatting)]));
+            cells.push(covering.cell.with(&[
+                ("content", Js::new_arr(Vec::new())),
+                ("formatting", formatting),
+            ]));
             stories.push(match &covering.story {
                 None => Js::Undefined,
-                Some(story) => obj! { "covering" => story.as_str(), "rowOffset" => ri - covering.row },
+                Some(story) => {
+                    obj! { "covering" => story.as_str(), "rowOffset" => ri - covering.row }
+                }
             });
             col += covering.colspan;
         }
@@ -1779,9 +2258,15 @@ pub(crate) fn table_from_payload(context: &crate::yrs_to_document::SaveContext, 
         let ins = tracked_info(&attrs.get("trIns"), true, None)?;
         let del = tracked_info(&attrs.get("trDel"), true, None)?;
         if ins.truthy() {
-            row.set("structuralChange", obj! { "type" => "tableRowInsertion", "info" => ins });
+            row.set(
+                "structuralChange",
+                obj! { "type" => "tableRowInsertion", "info" => ins },
+            );
         } else if del.truthy() {
-            row.set("structuralChange", obj! { "type" => "tableRowDeletion", "info" => del });
+            row.set(
+                "structuralChange",
+                obj! { "type" => "tableRowDeletion", "info" => del },
+            );
         }
         let tr_pr_change = attrs.get("trPrChange");
         if tr_pr_change.is_arr() && tr_pr_change.len() > 0 {
@@ -1794,16 +2279,33 @@ pub(crate) fn table_from_payload(context: &crate::yrs_to_document::SaveContext, 
 
     normalize_v_merge_runs(&rows)?;
     let grid_raw = payload.get("grid");
-    let grid: Vec<Js> = if grid_raw.is_arr() { grid_raw.items().into_iter().filter(|w| w.is_num()).collect() } else { Vec::new() };
+    let grid: Vec<Js> = if grid_raw.is_arr() {
+        grid_raw
+            .items()
+            .into_iter()
+            .filter(|w| w.is_num())
+            .collect()
+    } else {
+        Vec::new()
+    };
     let attrs = table_attr_defaults_b();
     attrs.assign(&payload.get("tblPr").nullish_or(Js::new_obj()));
-    attrs.set("columnWidths", if grid.is_empty() { Js::Undefined } else { Js::new_arr(grid) });
+    attrs.set(
+        "columnWidths",
+        if grid.is_empty() {
+            Js::Undefined
+        } else {
+            Js::new_arr(grid)
+        },
+    );
     context.apply_table_baseline(payload, &attrs)?;
     let mut formatting = table_attrs_to_formatting(&attrs)?;
     if !formatting.get("borders").truthy() && !attrs.get("_originalFormatting").truthy() {
         let borders = infer_table_borders(&rows)?;
         if borders.truthy() {
-            formatting = formatting.nullish_or(Js::new_obj()).with(&[("borders", borders)]);
+            formatting = formatting
+                .nullish_or(Js::new_obj())
+                .with(&[("borders", borders)]);
         }
     }
     let column_widths = attrs.get("columnWidths");
@@ -1820,7 +2322,11 @@ pub(crate) fn table_from_payload(context: &crate::yrs_to_document::SaveContext, 
     let mut prefix_hint: Option<String> = None;
     'outer: for row in &row_payloads {
         let cells = row.get("cells");
-        for cell in if cells.is_arr() { cells.items() } else { Vec::new() } {
+        for cell in if cells.is_arr() {
+            cells.items()
+        } else {
+            Vec::new()
+        } {
             let story = match as_string(&cell.path(&["tcPr", "_sourceCellStory"]))? {
                 Some(s) => Some(s),
                 None => as_string(&cell.get("story"))?,
@@ -1841,7 +2347,11 @@ pub(crate) fn table_cell_key(entry: &Js) -> Result<Option<String>> {
     Ok(if let Some(s) = entry.as_str() {
         Some(s.to_string())
     } else if entry.truthy() {
-        Some(format!("{}#{}", js::to_js_string(&entry.get("covering")), js::to_js_string(&entry.get("rowOffset"))))
+        Some(format!(
+            "{}#{}",
+            js::to_js_string(&entry.get("covering")),
+            js::to_js_string(&entry.get("rowOffset"))
+        ))
     } else {
         None
     })
@@ -1855,7 +2365,10 @@ pub(crate) fn base_table_cells(table: &Js, prefix: &str) -> Result<Js> {
             for (cell_index, entry) in row.items().iter().enumerate() {
                 if let Some(key) = table_cell_key(entry)? {
                     if !cells.map_has(&key) {
-                        cells.map_set(&key, obj! { "row" => row_index as f64, "cell" => cell_index as f64 });
+                        cells.map_set(
+                            &key,
+                            obj! { "row" => row_index as f64, "cell" => cell_index as f64 },
+                        );
                     }
                 }
             }
@@ -1875,7 +2388,10 @@ pub(crate) fn base_table_cells(table: &Js, prefix: &str) -> Result<Js> {
             let column = js::num_to_string(starts[cell_index]);
             if let Some(ordinal) = ordinal {
                 let story = format!("{}:r{}c{}", prefix, row_index, ordinal);
-                cells.map_set(&story, obj! { "row" => row_index as f64, "cell" => cell_index as f64 });
+                cells.map_set(
+                    &story,
+                    obj! { "row" => row_index as f64, "cell" => cell_index as f64 },
+                );
                 if cell.path(&["formatting", "vMerge"]).as_str() == Some("restart") {
                     spans.insert(column, (story, row_index));
                 } else {
@@ -1896,14 +2412,18 @@ pub(crate) fn base_table_cells(table: &Js, prefix: &str) -> Result<Js> {
 
 /// `gridStarts` (src/yrs/yrsToDocument.ts:2688).
 pub(crate) fn grid_starts(row: &Js) -> Result<Vec<f64>> {
-    let mut column = num(&row.path(&["formatting", "gridBefore"]).nullish_or(Js::from(0.0)));
+    let mut column = num(&row
+        .path(&["formatting", "gridBefore"])
+        .nullish_or(Js::from(0.0)));
     Ok(row
         .get("cells")
         .items()
         .iter()
         .map(|cell| {
             let start = column;
-            column += num(&cell.path(&["formatting", "gridSpan"]).nullish_or(Js::from(1.0)));
+            column += num(&cell
+                .path(&["formatting", "gridSpan"])
+                .nullish_or(Js::from(1.0)));
             start
         })
         .collect())
@@ -1934,7 +2454,8 @@ pub(crate) fn table_has_bookmarks(table: &Js) -> Result<bool> {
 
 /// `bookmarkMarker` (src/yrs/yrsToDocument.ts:2709).
 pub(crate) fn bookmark_marker(key: &str, scan: &Js) -> Result<Js> {
-    let marker = obj! { "type" => "paragraph", "paraId" => key, "content" => Js::new_arr(Vec::new()) };
+    let marker =
+        obj! { "type" => "paragraph", "paraId" => key, "content" => Js::new_arr(Vec::new()) };
     if scan.truthy() {
         marker.set("scan", scan.clone());
     }
@@ -1942,7 +2463,12 @@ pub(crate) fn bookmark_marker(key: &str, scan: &Js) -> Result<Js> {
 }
 
 /// `distributeBookmarks` (src/yrs/yrsToDocument.ts:2713).
-pub(crate) fn distribute_bookmarks(restored: &Js, items: &Js, leading: &dyn Fn(&Js, &str) -> Result<()>, trailing: &dyn Fn(&str) -> Result<()>) -> Result<()> {
+pub(crate) fn distribute_bookmarks(
+    restored: &Js,
+    items: &Js,
+    leading: &dyn Fn(&Js, &str) -> Result<()>,
+    trailing: &dyn Fn(&str) -> Result<()>,
+) -> Result<()> {
     let mut index = 0usize;
     let len = items.len();
     for block in restored.items() {
@@ -1976,12 +2502,19 @@ fn push_bookmark(target: &Js, key: &str, xml: &str) {
 fn index_of_f(values: Option<&Vec<f64>>, needle: f64) -> f64 {
     match values {
         None => -1.0,
-        Some(v) => v.iter().position(|x| *x == needle).map_or(-1.0, |i| i as f64),
+        Some(v) => v
+            .iter()
+            .position(|x| *x == needle)
+            .map_or(-1.0, |i| i as f64),
     }
 }
 
 fn row_starts(starts: &[Vec<f64>], row: f64) -> Option<&Vec<f64>> {
-    if row >= 0.0 && row.fract() == 0.0 { starts.get(row as usize) } else { None }
+    if row >= 0.0 && row.fract() == 0.0 {
+        starts.get(row as usize)
+    } else {
+        None
+    }
 }
 
 fn norm_bits(x: f64) -> u64 {
@@ -1989,8 +2522,15 @@ fn norm_bits(x: f64) -> u64 {
 }
 
 /// `restoreTableBookmarks` (src/yrs/yrsToDocument.ts:2731).
-pub(crate) fn restore_table_bookmarks(context: &crate::yrs_to_document::SaveContext, table: &Js, cell_stories: &Js, prefix_hint: Option<&str>) -> Result<()> {
-    let parse = |story: &str| match_cell_story(story, false).map(|(prefix, row, ordinal)| (prefix, row, ordinal));
+pub(crate) fn restore_table_bookmarks(
+    context: &crate::yrs_to_document::SaveContext,
+    table: &Js,
+    cell_stories: &Js,
+    prefix_hint: Option<&str>,
+) -> Result<()> {
+    let parse = |story: &str| {
+        match_cell_story(story, false).map(|(prefix, row, ordinal)| (prefix, row, ordinal))
+    };
     let prefix: Option<String> = match prefix_hint {
         Some(p) => Some(p.to_string()),
         None => cell_stories
@@ -2022,7 +2562,10 @@ pub(crate) fn restore_table_bookmarks(context: &crate::yrs_to_document::SaveCont
         starts.push(grid_starts(&row)?);
     }
     let continues = |row: f64, cell: f64| -> bool {
-        at_f(&at_f(&source_rows, row).get("cells"), cell).path(&["formatting", "vMerge"]).as_str() == Some("continue")
+        at_f(&at_f(&source_rows, row).get("cells"), cell)
+            .path(&["formatting", "vMerge"])
+            .as_str()
+            == Some("continue")
     };
     let resolved: Vec<Vec<Option<Resolved>>> = cell_stories
         .items()
@@ -2037,7 +2580,10 @@ pub(crate) fn restore_table_bookmarks(context: &crate::yrs_to_document::SaveCont
                     if let Some(s) = entry.as_str() {
                         let at = located.map_get(s);
                         return if at.truthy() {
-                            Some(Resolved::Direct { row: num(&at.get("row")), cell: num(&at.get("cell")) })
+                            Some(Resolved::Direct {
+                                row: num(&at.get("row")),
+                                cell: num(&at.get("cell")),
+                            })
                         } else {
                             None
                         };
@@ -2048,9 +2594,18 @@ pub(crate) fn restore_table_bookmarks(context: &crate::yrs_to_document::SaveCont
                     }
                     let (ar, ac) = (num(&anchor.get("row")), num(&anchor.get("cell")));
                     let column = row_starts(&starts, ar)
-                        .and_then(|s| if ac >= 0.0 { s.get(ac as usize).copied() } else { None })
+                        .and_then(|s| {
+                            if ac >= 0.0 {
+                                s.get(ac as usize).copied()
+                            } else {
+                                None
+                            }
+                        })
                         .unwrap_or(f64::NAN);
-                    Some(Resolved::Cover { row: ar + num(&entry.get("rowOffset")), column })
+                    Some(Resolved::Cover {
+                        row: ar + num(&entry.get("rowOffset")),
+                        column,
+                    })
                 })
                 .collect()
         })
@@ -2064,7 +2619,11 @@ pub(crate) fn restore_table_bookmarks(context: &crate::yrs_to_document::SaveCont
                 rows.insert(norm_bits(*row));
             }
         }
-        let source_row = if rows.len() == 1 { Some(f64::from_bits(rows[0])) } else { None };
+        let source_row = if rows.len() == 1 {
+            Some(f64::from_bits(rows[0]))
+        } else {
+            None
+        };
         match source_row {
             Some(r) if !seen.contains(&norm_bits(r)) => {
                 seen.insert(norm_bits(r));
@@ -2074,7 +2633,11 @@ pub(crate) fn restore_table_bookmarks(context: &crate::yrs_to_document::SaveCont
         }
     }
     for (index, row) in resolved.iter().enumerate() {
-        if row_keys[index].is_some() || row.iter().any(|c| matches!(c, Some(Resolved::Direct { .. }))) {
+        if row_keys[index].is_some()
+            || row
+                .iter()
+                .any(|c| matches!(c, Some(Resolved::Direct { .. })))
+        {
             continue;
         }
         let mut rows: indexmap::IndexSet<u64> = indexmap::IndexSet::new();
@@ -2085,7 +2648,11 @@ pub(crate) fn restore_table_bookmarks(context: &crate::yrs_to_document::SaveCont
                 }
             }
         }
-        let source_row = if rows.len() == 1 { Some(f64::from_bits(rows[0])) } else { None };
+        let source_row = if rows.len() == 1 {
+            Some(f64::from_bits(rows[0]))
+        } else {
+            None
+        };
         if let Some(r) = source_row {
             if !seen.contains(&norm_bits(r)) {
                 seen.insert(norm_bits(r));
@@ -2136,12 +2703,20 @@ pub(crate) fn restore_table_bookmarks(context: &crate::yrs_to_document::SaveCont
             return Ok(false);
         }
         let id = js::to_js_string(&id);
-        let partner = if marker.get("kind").as_str() == Some("start") { "end" } else { "start" };
+        let partner = if marker.get("kind").as_str() == Some("start") {
+            "end"
+        } else {
+            "start"
+        };
         Ok(!source_content.map_get(&id).get(partner).is_undefined()
             && projected_content.map_get(&id).get(partner).is_undefined())
     };
     let raw = |xml: &str| -> Result<Vec<Js>> {
-        Ok(if orphaned(xml)? { Vec::new() } else { vec![obj! { "type" => "rawXml", "xml" => xml }] })
+        Ok(if orphaned(xml)? {
+            Vec::new()
+        } else {
+            vec![obj! { "type" => "rawXml", "xml" => xml }]
+        })
     };
     let mut projected = Vec::new();
     for (index, row) in table_rows.items().iter().enumerate() {
@@ -2170,7 +2745,10 @@ pub(crate) fn restore_table_bookmarks(context: &crate::yrs_to_document::SaveCont
                 continue;
             }
             let is_start = marker.get("kind").as_str() == Some("start");
-            let partner = placed.map_get(&js::to_js_string(&id)).get(if is_start { "end" } else { "start" });
+            let partner =
+                placed
+                    .map_get(&js::to_js_string(&id))
+                    .get(if is_start { "end" } else { "start" });
             if !partner.is_undefined() {
                 let p = num(&partner);
                 let mid = index as f64 + 0.5;
@@ -2225,12 +2803,21 @@ pub(crate) fn restore_table_bookmarks(context: &crate::yrs_to_document::SaveCont
             continue;
         }
         let mut cell_base = Vec::new();
-        let kept = |xml: &str| -> Result<Vec<Js>> { if promoted.contains(xml) { Ok(Vec::new()) } else { raw(xml) } };
+        let kept = |xml: &str| -> Result<Vec<Js>> {
+            if promoted.contains(xml) {
+                Ok(Vec::new())
+            } else {
+                raw(xml)
+            }
+        };
         for (cell_index, cell) in source_row.get("cells").items().iter().enumerate() {
             for xml in str_items(&cell.get("leadingBookmarks")) {
                 cell_base.extend(kept(&xml)?);
             }
-            cell_base.push(bookmark_marker(&format!("C{}", cell_index), &Js::Undefined)?);
+            cell_base.push(bookmark_marker(
+                &format!("C{}", cell_index),
+                &Js::Undefined,
+            )?);
         }
         for xml in str_items(&source_row.get("trailingBookmarks")) {
             cell_base.extend(kept(&xml)?);
@@ -2289,7 +2876,10 @@ pub(crate) fn is_note_mark(content: &Js) -> Result<bool> {
     }
     Ok(t == "run"
         && children.len() > 0
-        && children.items().iter().all(|e| type_is(e, "footnoteRefMark") || type_is(e, "endnoteRefMark")))
+        && children
+            .items()
+            .iter()
+            .all(|e| type_is(e, "footnoteRefMark") || type_is(e, "endnoteRefMark")))
 }
 
 /// `hasNoteMark` (src/yrs/yrsToDocument.ts:2877).
@@ -2329,7 +2919,11 @@ pub(crate) fn restore_note_marks(projected: &Js, base: &Js) -> Result<Js> {
     if marks.is_empty() {
         return Ok(projected.clone());
     }
-    let index = match projected.items().iter().position(|b| type_is(b, "paragraph")) {
+    let index = match projected
+        .items()
+        .iter()
+        .position(|b| type_is(b, "paragraph"))
+    {
         Some(i) => i,
         None => return Ok(projected.clone()),
     };
@@ -2337,7 +2931,10 @@ pub(crate) fn restore_note_marks(projected: &Js, base: &Js) -> Result<Js> {
     let restored = projected.copy_arr();
     let mut merged = marks;
     merged.extend(target.get("content").items());
-    restored.set_at(index, clone_projected_paragraph(&target, &obj! { "content" => Js::new_arr(merged) }, &target)?);
+    restored.set_at(
+        index,
+        clone_projected_paragraph(&target, &obj! { "content" => Js::new_arr(merged) }, &target)?,
+    );
     Ok(restored)
 }
 
@@ -2356,27 +2953,47 @@ mod tests {
     // Expectations from running the TS functions with bun.
     #[test]
     fn content_lengths() {
-        let lengths: Vec<f64> = sample().items().iter().map(|c| paragraph_content_length(c).unwrap()).collect();
+        let lengths: Vec<f64> = sample()
+            .items()
+            .iter()
+            .map(|c| paragraph_content_length(c).unwrap())
+            .collect();
         assert_eq!(lengths, vec![5.0, 3.0, 2.0, 1.0, 2.0]);
     }
 
     #[test]
     fn split_content_halves() {
         let c = sample();
-        same(&split_content(&c.at(1), 1.0).unwrap(), r#"[{"type":"hyperlink","href":"x","children":[{"type":"run","content":[{"type":"text","text":"d"}]}]},{"type":"hyperlink","href":"x","children":[{"type":"run","content":[{"type":"text","text":"ef"}]}]}]"#);
-        same(&split_content(&c.at(2), 1.0).unwrap(), r#"[{"type":"insertion","info":{"id":1},"content":[{"type":"run","content":[{"type":"text","text":"g"}]}]},{"type":"insertion","info":{"id":1},"content":[{"type":"run","content":[{"type":"text","text":"h"}]}]}]"#);
+        same(
+            &split_content(&c.at(1), 1.0).unwrap(),
+            r#"[{"type":"hyperlink","href":"x","children":[{"type":"run","content":[{"type":"text","text":"d"}]}]},{"type":"hyperlink","href":"x","children":[{"type":"run","content":[{"type":"text","text":"ef"}]}]}]"#,
+        );
+        same(
+            &split_content(&c.at(2), 1.0).unwrap(),
+            r#"[{"type":"insertion","info":{"id":1},"content":[{"type":"run","content":[{"type":"text","text":"g"}]}]},{"type":"insertion","info":{"id":1},"content":[{"type":"run","content":[{"type":"text","text":"h"}]}]}]"#,
+        );
         assert!(split_content(&c.at(3), 0.0).unwrap().is_null());
-        same(&split_content(&c.at(0), 4.0).unwrap(), r#"[{"type":"run","content":[{"type":"text","text":"ab😀"}]},{"type":"run","content":[{"type":"text","text":"c"}]}]"#);
+        same(
+            &split_content(&c.at(0), 4.0).unwrap(),
+            r#"[{"type":"run","content":[{"type":"text","text":"ab😀"}]},{"type":"run","content":[{"type":"text","text":"c"}]}]"#,
+        );
     }
 
     #[test]
     fn insert_boundaries_orders_markers() {
         let b = Js::parse(r#"[{"id":1,"kind":"start","offset":1},{"id":1,"kind":"end","offset":7},{"id":2,"kind":"start","offset":5},{"id":2,"kind":"end","offset":5},{"id":3,"kind":"end","offset":10},{"id":4,"kind":"start","offset":10},{"id":0,"kind":"start","offset":10}]"#).unwrap();
         let out = insert_boundaries(&sample(), &b, &comment_marker_default).unwrap();
-        same(&out, r#"[{"type":"run","content":[{"type":"text","text":"a"}]},{"type":"commentRangeStart","id":1},{"type":"run","content":[{"type":"text","text":"b😀c"}]},{"type":"commentRangeStart","id":2},{"type":"commentRangeEnd","id":2},{"type":"hyperlink","href":"x","children":[{"type":"run","content":[{"type":"text","text":"de"}]}]},{"type":"commentRangeEnd","id":1},{"type":"hyperlink","href":"x","children":[{"type":"run","content":[{"type":"text","text":"f"}]}]},{"type":"insertion","info":{"id":1},"content":[{"type":"run","content":[{"type":"text","text":"gh"}]}]},{"type":"commentRangeEnd","id":3},{"type":"commentRangeStart","id":0},{"type":"commentRangeStart","id":4},{"type":"simpleField","content":[]},{"type":"run","content":[{"type":"text","text":"ij"}]}]"#);
+        same(
+            &out,
+            r#"[{"type":"run","content":[{"type":"text","text":"a"}]},{"type":"commentRangeStart","id":1},{"type":"run","content":[{"type":"text","text":"b😀c"}]},{"type":"commentRangeStart","id":2},{"type":"commentRangeEnd","id":2},{"type":"hyperlink","href":"x","children":[{"type":"run","content":[{"type":"text","text":"de"}]}]},{"type":"commentRangeEnd","id":1},{"type":"hyperlink","href":"x","children":[{"type":"run","content":[{"type":"text","text":"f"}]}]},{"type":"insertion","info":{"id":1},"content":[{"type":"run","content":[{"type":"text","text":"gh"}]}]},{"type":"commentRangeEnd","id":3},{"type":"commentRangeStart","id":0},{"type":"commentRangeStart","id":4},{"type":"simpleField","content":[]},{"type":"run","content":[{"type":"text","text":"ij"}]}]"#,
+        );
         let empty = Js::new_arr(Vec::new());
         let c = sample();
-        assert!(insert_boundaries(&c, &empty, &comment_marker_default).unwrap().strict_eq(&c));
+        assert!(
+            insert_boundaries(&c, &empty, &comment_marker_default)
+                .unwrap()
+                .strict_eq(&c)
+        );
     }
 
     #[test]
@@ -2389,16 +3006,36 @@ mod tests {
 
     #[test]
     fn text_matches() {
-        same(&source_text_matches("hello world", "hello brave world").unwrap(), r#"[{"original":0,"current":0,"length":6},{"original":6,"current":12,"length":5}]"#);
-        same(&source_text_matches("the quick brown fox", "a quick red fox!").unwrap(), r#"[{"original":3,"current":1,"length":7},{"original":11,"current":8,"length":1},{"original":15,"current":11,"length":4}]"#);
-        same(&source_text_matches("a😀b", "ab😀").unwrap(), r#"[{"original":0,"current":0,"length":1},{"original":1,"current":2,"length":2}]"#);
+        same(
+            &source_text_matches("hello world", "hello brave world").unwrap(),
+            r#"[{"original":0,"current":0,"length":6},{"original":6,"current":12,"length":5}]"#,
+        );
+        same(
+            &source_text_matches("the quick brown fox", "a quick red fox!").unwrap(),
+            r#"[{"original":3,"current":1,"length":7},{"original":11,"current":8,"length":1},{"original":15,"current":11,"length":4}]"#,
+        );
+        same(
+            &source_text_matches("a😀b", "ab😀").unwrap(),
+            r#"[{"original":0,"current":0,"length":1},{"original":1,"current":2,"length":2}]"#,
+        );
     }
 
     #[test]
     fn cell_story_pattern() {
-        assert_eq!(match_cell_story("body:t0:r1c2", false), Some(("body:t0".into(), "1".into(), "2".into())));
-        assert_eq!(match_cell_story("a:t1:r0c0:t2:r3c4~5", true).map(|m| m.0), Some("a:t1:r0c0:t2".into()));
+        assert_eq!(
+            match_cell_story("body:t0:r1c2", false),
+            Some(("body:t0".into(), "1".into(), "2".into()))
+        );
+        assert_eq!(
+            match_cell_story("a:t1:r0c0:t2:r3c4~5", true).map(|m| m.0),
+            Some("a:t1:r0c0:t2".into())
+        );
         assert_eq!(match_cell_story("a:t1:r0c0~5", false), None);
         assert_eq!(match_cell_story("t1:r0c0", true), None);
     }
+}
+
+/// Drops the `PROJECTED_TABLE_CELLS` entries of objects that no longer exist.
+pub(crate) fn prune_projected_table_cells() {
+    PROJECTED_TABLE_CELLS.with(|marks| marks.clear());
 }

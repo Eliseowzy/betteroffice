@@ -1,12 +1,12 @@
 //! Port of `packages/docx/src/types/sdtAttributes.ts`.
 #![allow(unused_variables, unused_imports, dead_code, clippy::all)]
 
-use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
-use indexmap::IndexMap;
 use crate::js::{Js, Result, SaveError};
 use crate::session::{Inheritance, Session};
 use crate::{arr, obj, throw};
+use indexmap::IndexMap;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 fn or_null(v: Js) -> Js {
     v.nullish_or(Js::Null)

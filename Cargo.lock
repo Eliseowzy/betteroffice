@@ -166,6 +166,7 @@ dependencies = [
  "betteroffice-docx-edit",
  "betteroffice-docx-parse",
  "betteroffice-opc",
+ "foldhash",
  "indexmap",
  "ryu-js",
  "serde",

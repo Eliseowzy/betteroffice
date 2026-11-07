@@ -1,12 +1,12 @@
 //! Port of `packages/docx/src/yrs/saveFormatting.ts`.
 #![allow(unused_variables, unused_imports, dead_code, clippy::all)]
 
-use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
-use indexmap::IndexMap;
 use crate::js::{Js, Result, SaveError};
 use crate::session::{Inheritance, Session};
 use crate::{arr, obj, throw};
+use indexmap::IndexMap;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 /// `v || undefined`.
 fn or_u(v: Js) -> Js {
@@ -42,22 +42,41 @@ pub(crate) fn inherits_value(attrs: &Js, orig: &Js, inherited: &Js, key: &Js) ->
 pub(crate) fn without_inherited(formatting: &Js, inherited: &Js) -> Result<Js> {
     let result = formatting.spread();
     for key in result.keys() {
-        if matches!(key.as_str(), "styleId" | "numPr" | "lineSpacing" | "lineSpacingRule" | "indentFirstLine" | "hangingIndent") {
+        if matches!(
+            key.as_str(),
+            "styleId"
+                | "numPr"
+                | "lineSpacing"
+                | "lineSpacingRule"
+                | "indentFirstLine"
+                | "hangingIndent"
+        ) {
             continue;
         }
-        if !inherited.get(&key).is_undefined() && same_value(&result.get(&key), &inherited.get(&key))? {
+        if !inherited.get(&key).is_undefined()
+            && same_value(&result.get(&key), &inherited.get(&key))?
+        {
             result.delete(&key);
         }
     }
     let auto = || Js::from("auto");
     if !inherited.get("lineSpacing").is_undefined()
-        && result.get("lineSpacing").strict_eq(&inherited.get("lineSpacing"))
-        && result.get("lineSpacingRule").nullish_or(auto()).strict_eq(&inherited.get("lineSpacingRule").nullish_or(auto()))
+        && result
+            .get("lineSpacing")
+            .strict_eq(&inherited.get("lineSpacing"))
+        && result
+            .get("lineSpacingRule")
+            .nullish_or(auto())
+            .strict_eq(&inherited.get("lineSpacingRule").nullish_or(auto()))
     {
         result.delete("lineSpacing");
         result.delete("lineSpacingRule");
     }
-    Ok(if result.entries().iter().any(|(_, v)| !v.is_undefined()) { result } else { Js::Undefined })
+    Ok(if result.entries().iter().any(|(_, v)| !v.is_undefined()) {
+        result
+    } else {
+        Js::Undefined
+    })
 }
 
 /// `paragraphAttrsToFormatting` (src/yrs/saveFormatting.ts:110).
@@ -74,17 +93,26 @@ pub(crate) fn paragraph_attrs_to_formatting(attrs: &Js, inherited: &Js) -> Resul
         if is_style_sourced_num_pr(attrs)? {
             result.delete("numPr");
             result.delete("numPrFromStyle");
-        } else if !a("numPr").strict_eq(&o("numPr")) && a("numPr").stringify() != o("numPr").stringify() {
+        } else if !a("numPr").strict_eq(&o("numPr"))
+            && a("numPr").stringify() != o("numPr").stringify()
+        {
             result.set("numPr", or_u(a("numPr")));
             result.delete("numPrFromStyle");
         }
         if !a("styleId").strict_eq(&or_u(o("styleId"))) {
             result.set("styleId", or_u(a("styleId")));
         }
-        if !inherits("pageBreakBefore")? && !a("pageBreakBefore").strict_eq(&or_u(o("pageBreakBefore"))) {
+        if !inherits("pageBreakBefore")?
+            && !a("pageBreakBefore").strict_eq(&or_u(o("pageBreakBefore")))
+        {
             result.set("pageBreakBefore", or_u(a("pageBreakBefore")));
         }
-        for k in ["widowControl", "autoSpaceDE", "autoSpaceDN", "adjustRightInd"] {
+        for k in [
+            "widowControl",
+            "autoSpaceDE",
+            "autoSpaceDN",
+            "adjustRightInd",
+        ] {
             if !inherits(k)? && !a(k).strict_eq(&nn(o(k))) {
                 result.set(k, nn(a(k)));
             }
@@ -155,7 +183,11 @@ pub(crate) fn paragraph_attrs_to_formatting(attrs: &Js, inherited: &Js) -> Resul
         "cnfStyle" => or_u(a("cnfStyle")),
         "bidi" => or_u(a("bidi")),
     };
-    if inherited.truthy() { without_inherited(&formatting, inherited) } else { Ok(formatting) }
+    if inherited.truthy() {
+        without_inherited(&formatting, inherited)
+    } else {
+        Ok(formatting)
+    }
 }
 
 fn width_of(attrs: &Js) -> Js {
@@ -197,10 +229,16 @@ pub(crate) fn table_attrs_to_formatting(attrs: &Js) -> Result<Js> {
         if !a("bidi").strict_eq(&or_u(o("bidi"))) {
             result.set("bidi", or_u(a("bidi")));
         }
-        if !a("width").strict_eq(&orig.path(&["width", "value"])) || !a("widthType").strict_eq(&orig.path(&["width", "type"])) {
+        if !a("width").strict_eq(&orig.path(&["width", "value"]))
+            || !a("widthType").strict_eq(&orig.path(&["width", "type"]))
+        {
             result.set(
                 "width",
-                if !a("width").is_nullish() || a("widthType").truthy() { width_of(attrs) } else { Js::Undefined },
+                if !a("width").is_nullish() || a("widthType").truthy() {
+                    width_of(attrs)
+                } else {
+                    Js::Undefined
+                },
             );
         }
         if !margins.strict_eq(&o("cellMargins")) {
@@ -240,15 +278,27 @@ fn dxa(v: Js) -> Js {
 pub(crate) fn measurement_margins(margins: &Js) -> Result<Js> {
     let m = |k: &str| {
         let v = margins.get(k);
-        if v.is_nullish() { Js::Undefined } else { dxa(v) }
+        if v.is_nullish() {
+            Js::Undefined
+        } else {
+            dxa(v)
+        }
     };
-    Ok(obj! { "top" => m("top"), "bottom" => m("bottom"), "left" => m("left"), "right" => m("right") })
+    Ok(
+        obj! { "top" => m("top"), "bottom" => m("bottom"), "left" => m("left"), "right" => m("right") },
+    )
 }
 
 /// `tableRowAttrsToFormatting` (src/yrs/saveFormatting.ts:327).
 pub(crate) fn table_row_attrs_to_formatting(attrs: &Js) -> Result<Js> {
     let a = |k: &str| attrs.get(k);
-    let height = || if a("height").truthy() { dxa(a("height")) } else { Js::Undefined };
+    let height = || {
+        if a("height").truthy() {
+            dxa(a("height"))
+        } else {
+            Js::Undefined
+        }
+    };
     let orig = a("_originalFormatting");
     if orig.truthy() {
         let result = orig.spread();
@@ -289,8 +339,15 @@ pub(crate) fn table_cell_attrs_to_formatting(attrs: &Js) -> Result<Js> {
         Js::Undefined
     };
     let colspan_gt1 = crate::js::to_number(&a("colspan")) > 1.0;
-    let cell_width = || obj! { "value" => a("width"), "type" => a("widthType").or(Js::from("dxa")) };
-    let shading = || if a("backgroundColor").truthy() { obj! { "fill" => obj! { "rgb" => a("backgroundColor") } } } else { Js::Undefined };
+    let cell_width =
+        || obj! { "value" => a("width"), "type" => a("widthType").or(Js::from("dxa")) };
+    let shading = || {
+        if a("backgroundColor").truthy() {
+            obj! { "fill" => obj! { "rgb" => a("backgroundColor") } }
+        } else {
+            Js::Undefined
+        }
+    };
     let orig = a("_originalFormatting");
     if orig.truthy() {
         let o = |k: &str| orig.get(k);
@@ -304,7 +361,10 @@ pub(crate) fn table_cell_attrs_to_formatting(attrs: &Js) -> Result<Js> {
         if !a("verticalAlign").strict_eq(&or_u(o("verticalAlign"))) {
             result.set("verticalAlign", or_u(a("verticalAlign")));
         }
-        if !a("backgroundColor").nullish_or(Js::Null).strict_eq(&a("_originalResolvedFill").nullish_or(Js::Null)) {
+        if !a("backgroundColor")
+            .nullish_or(Js::Null)
+            .strict_eq(&a("_originalResolvedFill").nullish_or(Js::Null))
+        {
             result.set("shading", shading());
         }
         if !borders.strict_eq(&o("borders")) {

@@ -1,12 +1,12 @@
 //! Port of `packages/docx/src/utils/units.ts`.
 #![allow(unused_variables, unused_imports, dead_code, clippy::all)]
 
-use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
-use indexmap::IndexMap;
 use crate::js::{Js, Result, SaveError};
 use crate::session::{Inheritance, Session};
 use crate::{arr, obj, throw};
+use indexmap::IndexMap;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 const EMUS_PER_INCH: f64 = 914400.0;
 const POINTS_PER_INCH: f64 = 72.0;
@@ -97,15 +97,26 @@ pub(crate) fn clamp(value: f64, min: f64, max: f64) -> Result<f64> {
 }
 
 fn js_max(a: f64, b: f64) -> f64 {
-    if a.is_nan() || b.is_nan() { f64::NAN } else { a.max(b) }
+    if a.is_nan() || b.is_nan() {
+        f64::NAN
+    } else {
+        a.max(b)
+    }
 }
 fn js_min(a: f64, b: f64) -> f64 {
-    if a.is_nan() || b.is_nan() { f64::NAN } else { a.min(b) }
+    if a.is_nan() || b.is_nan() {
+        f64::NAN
+    } else {
+        a.min(b)
+    }
 }
 
 /// `formatPx` (src/utils/units.ts:158).
 pub(crate) fn format_px(px: f64) -> Result<String> {
-    Ok(format!("{}px", crate::js::num_to_string(round_pixels(px, 2.0)?)))
+    Ok(format!(
+        "{}px",
+        crate::js::num_to_string(round_pixels(px, 2.0)?)
+    ))
 }
 
 #[cfg(test)]

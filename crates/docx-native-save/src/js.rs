@@ -13,7 +13,10 @@ use indexmap::IndexMap;
 use serde::de::{self, Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
 
-pub type Props = IndexMap<String, Js>;
+/// The hasher of every object and map: foldhash, as docx-edit uses.
+pub type Hasher = foldhash::fast::RandomState;
+pub type Props = IndexMap<String, Js, Hasher>;
+pub type StrMap = IndexMap<String, Js, Hasher>;
 
 /// A JavaScript value. Objects, arrays and maps are shared references, as in JS.
 #[derive(Clone, Default)]
@@ -37,7 +40,7 @@ pub struct Obj(pub Rc<RefCell<Props>>);
 #[derive(Clone)]
 pub struct Arr(pub Rc<RefCell<Vec<Js>>>);
 #[derive(Clone)]
-pub struct JsMap(pub Rc<RefCell<IndexMap<String, Js>>>);
+pub struct JsMap(pub Rc<RefCell<StrMap>>);
 
 /// A thrown error.
 #[derive(Debug, Clone, PartialEq)]
@@ -169,7 +172,7 @@ impl<T: Into<Js>> From<Option<T>> for Js {
 
 impl Js {
     pub fn new_obj() -> Js {
-        Js::Obj(Obj(Rc::new(RefCell::new(Props::new()))))
+        Js::Obj(Obj(Rc::new(RefCell::new(Props::default()))))
     }
     pub fn obj_from(props: Props) -> Js {
         Js::Obj(Obj(Rc::new(RefCell::new(props))))
@@ -178,7 +181,7 @@ impl Js {
         Js::Arr(Arr(Rc::new(RefCell::new(items))))
     }
     pub fn new_map() -> Js {
-        Js::Map(JsMap(Rc::new(RefCell::new(IndexMap::new()))))
+        Js::Map(JsMap(Rc::new(RefCell::new(StrMap::default()))))
     }
     pub fn map_from(entries: impl IntoIterator<Item = (String, Js)>) -> Js {
         Js::Map(JsMap(Rc::new(RefCell::new(entries.into_iter().collect()))))
@@ -259,7 +262,11 @@ impl Js {
     }
     /// The value when it is defined: `x === undefined ? None : Some(x)`.
     pub fn defined(self) -> Option<Js> {
-        if self.is_undefined() { None } else { Some(self) }
+        if self.is_undefined() {
+            None
+        } else {
+            Some(self)
+        }
     }
     /// The value when it is not nullish.
     pub fn some(self) -> Option<Js> {
@@ -374,19 +381,19 @@ impl Js {
     /// `Object.entries(x)` for an object.
     pub fn entries(&self) -> Vec<(String, Js)> {
         match self {
-            Js::Obj(o) => o
-                .0
-                .borrow()
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            Js::Arr(a) => a
-                .0
-                .borrow()
-                .iter()
-                .enumerate()
-                .map(|(i, v)| (i.to_string(), v.clone()))
-                .collect(),
+            Js::Obj(o) => {
+                o.0.borrow()
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect()
+            }
+            Js::Arr(a) => {
+                a.0.borrow()
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| (i.to_string(), v.clone()))
+                    .collect()
+            }
             _ => Vec::new(),
         }
     }
@@ -527,12 +534,12 @@ impl Js {
     /// `[...m]` of a `Map`, in insertion order.
     pub fn map_entries(&self) -> Vec<(String, Js)> {
         match self {
-            Js::Map(m) => m
-                .0
-                .borrow()
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
+            Js::Map(m) => {
+                m.0.borrow()
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect()
+            }
             _ => Vec::new(),
         }
     }
@@ -571,21 +578,19 @@ impl Js {
     /// `structuredClone(x)`: a deep copy, maps as maps, shared references copied once.
     pub fn deep_clone(&self) -> Js {
         fn go(value: &Js, seen: &mut HashMap<usize, Js>) -> Js {
-            if let Some(p) = value.ptr() {
-                if let Some(copy) = seen.get(&p) {
+            if let Some(p) = value.ptr()
+                && let Some(copy) = seen.get(&p) {
                     return copy.clone();
                 }
-            }
             match value {
                 Js::Obj(o) => {
                     let out = Js::new_obj();
                     seen.insert(value.ptr().unwrap(), out.clone());
-                    let entries: Vec<(String, Js)> = o
-                        .0
-                        .borrow()
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect();
+                    let entries: Vec<(String, Js)> =
+                        o.0.borrow()
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v.clone()))
+                            .collect();
                     for (k, v) in entries {
                         let c = go(&v, seen);
                         out.set(&k, c);
@@ -605,12 +610,11 @@ impl Js {
                 Js::Map(m) => {
                     let out = Js::new_map();
                     seen.insert(value.ptr().unwrap(), out.clone());
-                    let entries: Vec<(String, Js)> = m
-                        .0
-                        .borrow()
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect();
+                    let entries: Vec<(String, Js)> =
+                        m.0.borrow()
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v.clone()))
+                            .collect();
                     for (k, v) in entries {
                         let c = go(&v, seen);
                         out.map_set(&k, c);
@@ -707,13 +711,19 @@ pub fn to_js_string(value: &Js) -> String {
         Js::Bool(b) => b.to_string(),
         Js::Num(n) => num_to_string(*n),
         Js::Str(s) => s.to_string(),
-        Js::Arr(a) => a
-            .0
-            .borrow()
-            .iter()
-            .map(|v| if v.is_nullish() { String::new() } else { to_js_string(v) })
-            .collect::<Vec<_>>()
-            .join(","),
+        Js::Arr(a) => {
+            a.0.borrow()
+                .iter()
+                .map(|v| {
+                    if v.is_nullish() {
+                        String::new()
+                    } else {
+                        to_js_string(v)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(",")
+        }
         Js::Map(_) => "[object Map]".into(),
         _ => "[object Object]".into(),
     }
@@ -791,7 +801,11 @@ pub fn parse_float(s: &str) -> f64 {
             seen_dot = true;
         } else if (c == b'e' || c == b'E') && seen_digit && !seen_exp {
             let next = bytes.get(end + 1).copied();
-            let after = if matches!(next, Some(b'+' | b'-')) { bytes.get(end + 2).copied() } else { next };
+            let after = if matches!(next, Some(b'+' | b'-')) {
+                bytes.get(end + 2).copied()
+            } else {
+                next
+            };
             if !after.is_some_and(|b| b.is_ascii_digit()) {
                 break;
             }
@@ -882,7 +896,7 @@ pub fn cmp16(a: &str, b: &str) -> std::cmp::Ordering {
 enum WeakRef {
     Obj(Weak<RefCell<Props>>),
     Arr(Weak<RefCell<Vec<Js>>>),
-    Map(Weak<RefCell<IndexMap<String, Js>>>),
+    Map(Weak<RefCell<StrMap>>),
     Bytes(Weak<Vec<u8>>),
 }
 
@@ -909,6 +923,8 @@ impl WeakRef {
 /// A `WeakMap` keyed by object identity (a `WeakSet` with `V = ()`).
 pub struct Marks<V> {
     entries: RefCell<HashMap<usize, (WeakRef, V)>>,
+    /// The size at which dead entries are next dropped: twice the live ones at the last prune.
+    prune_at: std::cell::Cell<usize>,
 }
 
 impl<V: Clone> Default for Marks<V> {
@@ -921,16 +937,37 @@ impl<V: Clone> Marks<V> {
     pub fn new() -> Self {
         Self {
             entries: RefCell::new(HashMap::new()),
+            prune_at: std::cell::Cell::new(1024),
         }
     }
     pub fn set(&self, key: &Js, value: V) {
         if let (Some(p), Some(w)) = (key.ptr(), WeakRef::of(key)) {
-            let mut entries = self.entries.borrow_mut();
-            if entries.len() > 4096 {
-                entries.retain(|_, (w, _)| w.alive());
-            }
-            entries.insert(p, (w, value));
+            let dead = {
+                let mut entries = self.entries.borrow_mut();
+                let dead = if entries.len() >= self.prune_at.get() {
+                    let (live, dead): (HashMap<_, _>, HashMap<_, _>) =
+                        entries.drain().partition(|(_, (w, _))| w.alive());
+                    *entries = live;
+                    self.prune_at.set((entries.len() * 2).max(1024));
+                    dead
+                } else {
+                    HashMap::new()
+                };
+                entries.insert(p, (w, value));
+                dead
+            };
+            drop(dead);
         }
+    }
+    /// Drops the entries of objects that no longer exist, and their values.
+    pub fn prune(&self) {
+        let dead: HashMap<_, _> = {
+            let mut entries = self.entries.borrow_mut();
+            let (live, dead) = entries.drain().partition(|(_, (w, _))| w.alive());
+            *entries = live;
+            dead
+        };
+        drop(dead);
     }
     pub fn get(&self, key: &Js) -> Option<V> {
         let p = key.ptr()?;
@@ -1052,7 +1089,10 @@ impl<'de> Deserialize<'de> for Js {
                 Ok(Js::new_arr(items))
             }
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> std::result::Result<Js, A::Error> {
-                let mut props = Props::with_capacity(map.size_hint().unwrap_or(0));
+                let mut props = Props::with_capacity_and_hasher(
+                    map.size_hint().unwrap_or(0),
+                    Hasher::default(),
+                );
                 while let Some((k, v)) = map.next_entry::<String, Js>()? {
                     props.insert(k, v);
                 }
@@ -1061,6 +1101,17 @@ impl<'de> Deserialize<'de> for Js {
         }
         d.deserialize_any(V)
     }
+}
+
+/// Runs `f`, printing how long it took under `label` when `NATIVE_SAVE_TRACE` is set.
+pub fn timed<T>(label: &str, f: impl FnOnce() -> T) -> T {
+    if std::env::var_os("NATIVE_SAVE_TRACE").is_none() {
+        return f();
+    }
+    let t = std::time::Instant::now();
+    let out = f();
+    eprintln!("  {label}: {:.1} ms", t.elapsed().as_secs_f64() * 1e3);
+    out
 }
 
 #[cfg(test)]
@@ -1072,7 +1123,10 @@ mod tests {
         let o = obj! { "b" => 1.0, "a" => Js::Undefined, "c" => arr![Js::Undefined, 1.5, "x"] };
         assert_eq!(o.stringify().unwrap(), r#"{"b":1,"c":[null,1.5,"x"]}"#);
         let parsed = Js::parse(r#"{"z":1,"a":{"y":[true,null]}}"#).unwrap();
-        assert_eq!(parsed.stringify().unwrap(), r#"{"z":1,"a":{"y":[true,null]}}"#);
+        assert_eq!(
+            parsed.stringify().unwrap(),
+            r#"{"z":1,"a":{"y":[true,null]}}"#
+        );
         assert_eq!(num_to_string(1e21), "1e+21");
         assert_eq!(num_to_string(0.1 + 0.2), "0.30000000000000004");
         assert_eq!(num_to_string(-0.0), "0");

@@ -67,15 +67,14 @@ pub(crate) fn decode_s9_envelope_value(value: &Js, original_buffer: &Rc<Vec<u8>>
     } else {
         Some(string_at(&sha_value, "wire.canonicalSha256")?)
     };
-    if let Some(sha) = &sha {
-        if !(sha.len() == 64
+    if let Some(sha) = &sha
+        && !(sha.len() == 64
             && sha
                 .bytes()
                 .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
         {
             throw!("wire.canonicalSha256 is invalid");
         }
-    }
     let result =
         obj! { "wireVersion" => 1.0, "document" => document, "embeddedFonts" => embedded_fonts };
     let font_rels = envelope.get("fontTableRelationshipsXml");
@@ -601,7 +600,7 @@ pub(crate) fn decode_base64(value: &str) -> Result<Vec<u8>> {
         .bytes()
         .filter(|b| !matches!(b, b'\t' | b'\n' | 0x0c | b'\r' | b' '))
         .collect();
-    if data.len() % 4 == 0 {
+    if data.len().is_multiple_of(4) {
         if data.ends_with(b"==") {
             data.truncate(data.len() - 2);
         } else if data.ends_with(b"=") {
