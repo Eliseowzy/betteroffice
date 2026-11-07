@@ -11,10 +11,10 @@ import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'n
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Dependency order: the i18n packages have no workspace dependencies in this set. @betteroffice/fonts is
-// not repacked: we do not change it, and its own font-pack dependencies are only on npm, so
-// `bun pm pack` pins it to the published release.
-const PACKAGES = ['pptx-i18n', 'pptx', 'pptx-react', 'docx-i18n', 'docx', 'docx-react'] as const;
+// Dependency order: fonts and the i18n packages have no workspace dependencies in this set.
+// @betteroffice/fonts is repacked: this checkout's docx imports `@betteroffice/fonts/progressive`,
+// which the published 0.4.2 lacks. Its font packs stay on npm. The host overrides it too.
+const PACKAGES = ['fonts', 'pptx-i18n', 'pptx', 'pptx-react', 'docx-i18n', 'docx', 'docx-react'] as const;
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const flag = (name: string) => args.includes(name);
